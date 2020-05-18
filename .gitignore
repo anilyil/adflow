@@ -40,3 +40,8 @@ python/inputFiles.tar.gz
 
 # for mac users
 *.DS_Store
+
+python/inputFiles/*.cgns
+python/inputFiles/tecplot.phy
+python/inputFiles/split_file
+python/inputFiles/*.tar.gz

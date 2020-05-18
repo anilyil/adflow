@@ -15,8 +15,9 @@ from commonUtils import *
 # ###################################################################
 # DO NOT USE THIS IMPORT STRATEGY! THIS IS ONLY USED FOR REGRESSION
 # SCRIPTS ONLY. Use 'from adflow import ADFLOW' for regular scripts.
-sys.path.append(os.path.abspath('../../'))
-from python.pyADflow import ADFLOW
+# sys.path.append(os.path.abspath('../../'))
+# from python.pyADflow import ADFLOW
+from adflow.python.pyADflow import ADFLOW
 # ###################################################################
 
 # ****************************************************************************

@@ -76,7 +76,7 @@ else:
 
     # Run each script
     for iTest in tests:
-        os.system('%s -np %d python tests/test%d.py %s > %s_test%d_reg 2>&1'%(
+        os.system('%s -np %d python3 tests/test%d.py %s > %s_test%d_reg 2>&1'%(
             args.mpiexec, args.procs, iTest,  solveStr, module_name, iTest))
 
         refFile = 'ref/%s_test%d_reg.ref'%(module_name, iTest)
