@@ -297,10 +297,10 @@ class ADFLOW(AeroSolver):
         self.CGNSZoneNameIDs = {}
         for i in range(self.nZones):
             # index needs to go in as fortran numbering, so add 1
-            name = getPy3SafeString(self.adflow.utils.getcgnszonename(i+1).strip()) 
+            name = getPy3SafeString(self.adflow.utils.getcgnszonename(i+1).strip())
             self.CGNSZoneNameIDs[name] = i+1
             # do we need to do this on root and broadcast?
-            
+
         # Call the user supplied callback if necessary
         cutCallBack = self.getOption('cutCallBack')
         flag = numpy.zeros(n)
@@ -1747,7 +1747,7 @@ class ADFLOW(AeroSolver):
                 targetVals.append(funcDict[key]['target'])
             else:
                 targetVals.append(0.0)
-            
+
             if 'initVal' in funcDict[key]:
                 initVals.append(funcDict[key]['initVal'])
             else:
@@ -2591,7 +2591,7 @@ class ADFLOW(AeroSolver):
             if not ptSetName in self.DVGeo.points:
                 coords0 = self.mapVector(self.coords0, self.allFamilies,
                                          self.designFamilyGroup, includeZipper=False)
-                self.DVGeo.addPointSet(coords0, ptSetName)
+                self.DVGeo.addPointSet(coords0, ptSetName, comm=self.comm)
 
             # Check if our point-set is up to date:
             if not self.DVGeo.pointSetUpToDate(ptSetName):
