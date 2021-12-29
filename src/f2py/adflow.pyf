@@ -331,6 +331,12 @@ python module libadflow
            integer(kind=inttype), optional,intent(in),check(len(famlist)>=nfamlist),depend(famlist) :: nfamlist=len(famlist)
            integer(kind=inttype) intent(in) :: sps
          end subroutine getsurfaceperturbation
+
+         subroutine setgridforoneinstance(grid,sps) ! in warping.F90:warping
+           real(kind=realtype) dimension(:),intent(in) :: grid
+           integer intent(in) :: sps
+         end subroutine setgridforoneinstance
+
        end module warping
 
        module surfaceutils
@@ -464,7 +470,7 @@ python module libadflow
        end module usersurfaceintegrations
 
        module actuatorregion ! in :test:actuatorDiskRegion.F90
-         subroutine addactuatorregion(pts,conn,axis1,axis2,famname,famid,thrust,torque,relaxstart,relaxend,npts,nconn) ! in :test:actuatorDiskRegion.F90:actuatorregion
+         subroutine addactuatorregion(pts,conn,axis1,axis2,famname,famid,thrust,torque,heat,relaxstart,relaxend,npts,nconn) ! in :test:actuatorDiskRegion.F90:actuatorregion
            real(kind=realtype) dimension(3,npts),intent(in) :: pts
            integer(kind=inttype) dimension(4,nconn),intent(in) :: conn
            real(kind=realtype), dimension(3),intent(in) :: axis1
@@ -473,6 +479,7 @@ python module libadflow
            integer(kind=inttype) intent(in) :: famid
            real(kind=realtype) :: thrust
            real(kind=realtype) :: torque
+           real(kind=realtype) :: heat
            real(kind=realtype) :: relaxstart
            real(kind=realtype) :: relaxend
            integer(kind=inttype), optional,intent(in),check(shape(pts,1)==npts),depend(pts) :: npts=shape(pts,1)
@@ -1145,6 +1152,7 @@ python module libadflow
          real(kind=realtype) :: adjdivtol
          real(kind=realtype) :: adjreltol
          real(kind=realtype) :: adjreltolrel
+         real(kind=realtype) :: adjmaxl2dev
          integer(kind=inttype) :: overlap
          integer(kind=inttype) :: adjmonstep
          integer(kind=inttype) :: filllevel
@@ -1174,11 +1182,13 @@ python module libadflow
          real(kind=realtype) allocatable,dimension(:,:,:) :: dscalar
          real(kind=realtype) allocatable,dimension(:,:,:) :: dvector
          real(kind=realtype) :: dtunsteadyrestartspectral
+         logical :: usetsinterpolatedgridvelocity
          logical :: writeunsteadyrestartspectral
          integer(kind=inttype) :: nunsteadysolspectral
          logical :: writeunsteadyvolspectral
          logical :: writeunsteadysurfspectral
          real(kind=realtype) allocatable,dimension(:,:,:) :: rotmatrixspectral
+         real(kind=realtype) :: omegafourier
        end module inputtimespectral
        module inputoverset
          logical :: useoversetloadbalance
@@ -1188,6 +1198,7 @@ python module libadflow
          real(kind=realtype) :: overlapfactor
          integer(kind=inttype) :: oversetupdatemode
          integer(kind=inttype)::nrefine
+         integer(kind=inttype)::nflooditer
          logical :: debugzipper
          logical :: usezippermesh
          logical :: useoversetwallscaling

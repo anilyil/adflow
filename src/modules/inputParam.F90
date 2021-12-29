@@ -667,6 +667,9 @@ module inputTimeSpectral
 
   real(kind=realType), dimension(:,:,:), allocatable :: &
        rotMatrixSpectral
+  logical :: useTSInterpolatedGridVelocity
+
+  real(kind=realType) :: omegaFourier
 
 end module inputTimeSpectral
 
@@ -791,6 +794,7 @@ module inputADjoint
   real(kind=alwaysRealType)    :: adjAbsTol
   real(kind=alwaysRealType)    :: adjRelTolRel
   real(kind=alwaysRealType)    :: adjDivTol
+  real(kind=realType) :: adjMaxL2Dev
   integer(kind=intType)  :: adjMaxIter
   integer(kind=intType)  :: adjRestart
   integer(kind=intType)  :: adjMonStep
@@ -858,6 +862,7 @@ module inputOverset
   real(kind=realType) :: selfZipCutoff
   ! nRefine: number of connectivity loops to run
   integer(kind=intType)::nRefine
+  integer(kind=intType)::nFloodIter
   logical :: useZipperMesh
   logical :: useOversetWallScaling
 end module inputOverset

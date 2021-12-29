@@ -1582,9 +1582,9 @@ contains
           case (iBCGroupWalls)
              write(*,"(a)",advance="no") '| Wall Types           : '
           case (iBCGroupInflow)
-             write(*,"(a)",advance="no") '| Inflow Types : '
+             write(*,"(a)",advance="no") '| Inflow Types         : '
           case (iBCGroupOutflow)
-             write(*,"(a)",advance="no") '| Outflow Types : '
+             write(*,"(a)",advance="no") '| Outflow Types        : '
           case (iBCGroupSymm)
              write(*,"(a)",advance="no") '| Symmetry Types       : '
           case (iBCGroupFarfield)
@@ -3851,6 +3851,7 @@ contains
        endif
 
        call gridVelocitiesFineLevel(.false., t, mm)
+
        call gridVelocitiesCoarseLevels(mm)
        call normalVelocitiesAllLevels(mm)
 
@@ -3889,7 +3890,10 @@ contains
 
     call timePeriodSpectral
     call timeRotMatricesSpectral
-    call fineGridSpectralCoor
+    ! solve for the new grid only for rigid rotation with analytical deformation case
+    if (.NOT. usetsinterpolatedgridvelocity) then 
+       call fineGridSpectralCoor
+    end if
     call timeSpectralMatrices
 
 
