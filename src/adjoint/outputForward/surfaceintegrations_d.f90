@@ -535,7 +535,11 @@ contains
 &     costfuncforcexcoefmomentum)*dragdirection(1) + funcvalues(&
 &     costfuncforceycoefmomentum)*dragdirection(2) + funcvalues(&
 &     costfuncforcezcoefmomentum)*dragdirection(3)
-! final part of the ks computation
+! final part of the ks computation for cavitation and separation sensors
+    funcvaluesd(costfuncsepsensor) = funcvaluesd(costfuncsepsensor)/&
+&     funcvalues(costfuncsepsensor)/100_realtype
+    funcvalues(costfuncsepsensor) = 1.0 + log(funcvalues(&
+&     costfuncsepsensor))/100_realtype
     funcvaluesd(costfunccavitation) = funcvaluesd(costfunccavitation)/&
 &     funcvalues(costfunccavitation)/cavitationrho
     funcvalues(costfunccavitation) = cavitationnumber + log(funcvalues(&
@@ -801,7 +805,9 @@ contains
 &     costfuncforcexcoefmomentum)*dragdirection(1) + funcvalues(&
 &     costfuncforceycoefmomentum)*dragdirection(2) + funcvalues(&
 &     costfuncforcezcoefmomentum)*dragdirection(3)
-! final part of the ks computation
+! final part of the ks computation for cavitation and separation sensors
+    funcvalues(costfuncsepsensor) = 1.0 + log(funcvalues(&
+&     costfuncsepsensor))/100_realtype
     funcvalues(costfunccavitation) = cavitationnumber + log(funcvalues(&
 &     costfunccavitation))/cavitationrho
 ! -------------------- time spectral objectives ------------------
@@ -857,7 +863,9 @@ contains
     real(kind=realtype), dimension(3) :: fpd, fvd, mpd, mvd
     real(kind=realtype) :: yplusmax, sepsensor, sepsensoravg(3), &
 &   cavitation
-    real(kind=realtype) :: sepsensord, sepsensoravgd(3), cavitationd
+    real(kind=realtype) :: sepsensord, cavitationd
+    real(kind=realtype) :: norm_dot_free, surf_tan(3), cos_flow_angle
+    real(kind=realtype) :: norm_dot_freed, surf_tand(3), cos_flow_angled
     integer(kind=inttype) :: i, j, ii, blk
     real(kind=realtype) :: pm1, fx, fy, fz, fn
     real(kind=realtype) :: pm1d, fxd, fyd, fzd
@@ -865,7 +873,7 @@ contains
     real(kind=realtype) :: xcd, ycd, zcd, rd(3)
     real(kind=realtype) :: fact, rho, mul, yplus, dwall
     real(kind=realtype) :: v(3), sensor, sensor1, cp, tmp, plocal
-    real(kind=realtype) :: vd(3), sensord, sensor1d, cpd, tmpd, plocald
+    real(kind=realtype) :: vd(3), sensor1d, cpd, tmpd, plocald
     real(kind=realtype) :: tauxx, tauyy, tauzz
     real(kind=realtype) :: tauxxd, tauyyd, tauzzd
     real(kind=realtype) :: tauxy, tauxz, tauyz
@@ -922,12 +930,12 @@ contains
     mpaxis = zero
     mvaxis = zero
     cperror2 = zero
-    sepsensoravgd = 0.0_8
     rd = 0.0_8
     vd = 0.0_8
     mpaxisd = 0.0_8
     cperror2d = 0.0_8
     fpd = 0.0_8
+    surf_tand = 0.0_8
     mpd = 0.0_8
     cavitationd = 0.0_8
     sepsensord = 0.0_8
@@ -1066,58 +1074,102 @@ contains
       cellarea = sqrt(arg1)
       bcdatad(mm)%area(i, j) = cellaread
       bcdata(mm)%area(i, j) = cellarea
+! only run the separation computation if we are ahead of the separation cutoff.
+! this is a hack for 2d cases for now, 3d cases will need a better approach here
+      if (xc .lt. 0.9_realtype) then
 ! get normalized surface velocity:
-      vd(1) = ww2d(i, j, ivx)
-      v(1) = ww2(i, j, ivx)
-      vd(2) = ww2d(i, j, ivy)
-      v(2) = ww2(i, j, ivy)
-      vd(3) = ww2d(i, j, ivz)
-      v(3) = ww2(i, j, ivz)
-      arg1d = 2*v(1)*vd(1) + 2*v(2)*vd(2) + 2*v(3)*vd(3)
-      arg1 = v(1)**2 + v(2)**2 + v(3)**2
-      if (arg1 .eq. 0.0_8) then
-        result1d = 0.0_8
-      else
-        result1d = arg1d/(2.0*sqrt(arg1))
-      end if
-      result1 = sqrt(arg1)
-      vd = (vd*(result1+1e-16)-v*result1d)/(result1+1e-16)**2
-      v = v/(result1+1e-16)
+        vd(1) = ww2d(i, j, ivx)
+        v(1) = ww2(i, j, ivx)
+        vd(2) = ww2d(i, j, ivy)
+        v(2) = ww2(i, j, ivy)
+        vd(3) = ww2d(i, j, ivz)
+        v(3) = ww2(i, j, ivz)
+        arg1d = 2*v(1)*vd(1) + 2*v(2)*vd(2) + 2*v(3)*vd(3)
+        arg1 = v(1)**2 + v(2)**2 + v(3)**2
+        if (arg1 .eq. 0.0_8) then
+          result1d = 0.0_8
+        else
+          result1d = arg1d/(2.0*sqrt(arg1))
+        end if
+        result1 = sqrt(arg1)
+        vd = (vd*(result1+1e-16)-v*result1d)/(result1+1e-16)**2
+        v = v/(result1+1e-16)
+! get the surface tangent aligned with the free-stream direction:
+! first, get the dot product of free stream direction and surface normal
+        norm_dot_freed = bcdata(mm)%norm(i, j, 1)*veldirfreestreamd(1) +&
+&         bcdata(mm)%norm(i, j, 2)*veldirfreestreamd(2) + bcdata(mm)%&
+&         norm(i, j, 3)*veldirfreestreamd(3)
+        norm_dot_free = veldirfreestream(1)*bcdata(mm)%norm(i, j, 1) + &
+&         veldirfreestream(2)*bcdata(mm)%norm(i, j, 2) + &
+&         veldirfreestream(3)*bcdata(mm)%norm(i, j, 3)
+! then using the dot product, subtract the normal component of the free stream direction
+! to get the final vector we need, which is the surface tangent
+! aligned with the free stream velocity
+        surf_tand(1) = veldirfreestreamd(1) - bcdata(mm)%norm(i, j, 1)*&
+&         norm_dot_freed
+        surf_tan(1) = veldirfreestream(1) - norm_dot_free*bcdata(mm)%&
+&         norm(i, j, 1)
+        surf_tand(2) = veldirfreestreamd(2) - bcdata(mm)%norm(i, j, 2)*&
+&         norm_dot_freed
+        surf_tan(2) = veldirfreestream(2) - norm_dot_free*bcdata(mm)%&
+&         norm(i, j, 2)
+        surf_tand(3) = veldirfreestreamd(3) - bcdata(mm)%norm(i, j, 3)*&
+&         norm_dot_freed
+        surf_tan(3) = veldirfreestream(3) - norm_dot_free*bcdata(mm)%&
+&         norm(i, j, 3)
+! normalize so that computing the cos is easier
+        arg1d = 2*surf_tan(1)*surf_tand(1) + 2*surf_tan(2)*surf_tand(2) &
+&         + 2*surf_tan(3)*surf_tand(3)
+        arg1 = surf_tan(1)**2 + surf_tan(2)**2 + surf_tan(3)**2
+        if (arg1 .eq. 0.0_8) then
+          result1d = 0.0_8
+        else
+          result1d = arg1d/(2.0*sqrt(arg1))
+        end if
+        result1 = sqrt(arg1)
+        surf_tand = (surf_tand*(result1+1e-16)-surf_tan*result1d)/(&
+&         result1+1e-16)**2
+        surf_tan = surf_tan/(result1+1e-16)
+! get the cosine of the angle between the first-cell velocity with the surface tangent
+! when this angle hits +- 90 degrees, we say the cell is separated,
+! if its at 0, flow is perfectly aligned.
+! we dont divide by the magnitude of the two vectors because both of them
+! should already be normalized.
+        cos_flow_angled = vd(1)*surf_tan(1) + v(1)*surf_tand(1) + vd(2)*&
+&         surf_tan(2) + v(2)*surf_tand(2) + vd(3)*surf_tan(3) + v(3)*&
+&         surf_tand(3)
+        cos_flow_angle = v(1)*surf_tan(1) + v(2)*surf_tan(2) + v(3)*&
+&         surf_tan(3)
+! we want this number to stay above zero at all times, so we put a ks-max on negative
+! flow angle and constrain it to be below zero.
+! in this first implementation, we just assume the absolute min this can be is -1,
+! but ideally, we should be using the actual min from the flow field. otherwise,
+! this will underflow for rho values around 300 and above.
+        sepsensord = sepsensord - blk*100.0_realtype*cos_flow_angled*exp&
+&         (100.0_realtype*(-1.0_realtype-cos_flow_angle))
+        sepsensor = sepsensor + exp(100.0_realtype*(-1.0_realtype-&
+&         cos_flow_angle))*blk
 ! dot product with free stream
-      sensord = -(vd(1)*veldirfreestream(1)+v(1)*veldirfreestreamd(1)+vd&
-&       (2)*veldirfreestream(2)+v(2)*veldirfreestreamd(2)+vd(3)*&
-&       veldirfreestream(3)+v(3)*veldirfreestreamd(3))
-      sensor = -(v(1)*veldirfreestream(1)+v(2)*veldirfreestream(2)+v(3)*&
-&       veldirfreestream(3))
+!   sensor = -(v(1)*veldirfreestream(1) + v(2)*veldirfreestream(2) + &
+!   v(3)*veldirfreestream(3))
 !now run through a smooth heaviside function:
-      arg1d = -(2*sepsensorsharpness*sensord)
-      arg1 = -(2*sepsensorsharpness*(sensor-sepsensoroffset))
-      sensord = -(one*arg1d*exp(arg1)/(one+exp(arg1))**2)
-      sensor = one/(one+exp(arg1))
+!   sensor = one/(one + exp(-2*sepsensorsharpness*(sensor-sepsensoroffset)))
 ! and integrate over the area of this cell and save, blanking as we go.
-      sensord = blk*(sensord*cellarea+sensor*cellaread)
-      sensor = sensor*cellarea*blk
-      sepsensord = sepsensord + sensord
-      sepsensor = sepsensor + sensor
+!   sensor = sensor * cellarea * blk
+!   sepsensor = sepsensor + sensor
 ! also accumulate into the sepsensoravg
-      xcd = fourth*(xxd(i, j, 1)+xxd(i+1, j, 1)+xxd(i, j+1, 1)+xxd(i+1, &
-&       j+1, 1))
-      xc = fourth*(xx(i, j, 1)+xx(i+1, j, 1)+xx(i, j+1, 1)+xx(i+1, j+1, &
-&       1))
-      ycd = fourth*(xxd(i, j, 2)+xxd(i+1, j, 2)+xxd(i, j+1, 2)+xxd(i+1, &
-&       j+1, 2))
-      yc = fourth*(xx(i, j, 2)+xx(i+1, j, 2)+xx(i, j+1, 2)+xx(i+1, j+1, &
-&       2))
-      zcd = fourth*(xxd(i, j, 3)+xxd(i+1, j, 3)+xxd(i, j+1, 3)+xxd(i+1, &
-&       j+1, 3))
-      zc = fourth*(xx(i, j, 3)+xx(i+1, j, 3)+xx(i, j+1, 3)+xx(i+1, j+1, &
-&       3))
-      sepsensoravgd(1) = sepsensoravgd(1) + sensord*xc + sensor*xcd
-      sepsensoravg(1) = sepsensoravg(1) + sensor*xc
-      sepsensoravgd(2) = sepsensoravgd(2) + sensord*yc + sensor*ycd
-      sepsensoravg(2) = sepsensoravg(2) + sensor*yc
-      sepsensoravgd(3) = sepsensoravgd(3) + sensord*zc + sensor*zcd
-      sepsensoravg(3) = sepsensoravg(3) + sensor*zc
+!   xc = fourth*(xx(i,j,  1) + xx(i+1,j,  1) &
+!        +         xx(i,j+1,1) + xx(i+1,j+1,1))
+!   yc = fourth*(xx(i,j,  2) + xx(i+1,j,  2) &
+!        +         xx(i,j+1,2) + xx(i+1,j+1,2))
+!   zc = fourth*(xx(i,j,  3) + xx(i+1,j,  3) &
+!        +         xx(i,j+1,3) + xx(i+1,j+1,3))
+! todo what to do with the sep sensor average variable?
+! looks like its giving the average location of the separation, not sure how useful though...
+!   sepsensoravg(1) = sepsensoravg(1)  + sensor * xc
+!   sepsensoravg(2) = sepsensoravg(2)  + sensor * yc
+!   sepsensoravg(3) = sepsensoravg(3)  + sensor * zc
+      end if
       if (computecavitation) then
         plocald = pp2d(i, j)
         plocal = pp2(i, j)
@@ -1312,8 +1364,6 @@ contains
     localvalues(isepsensor) = localvalues(isepsensor) + sepsensor
     localvaluesd(icavitation) = localvaluesd(icavitation) + cavitationd
     localvalues(icavitation) = localvalues(icavitation) + cavitation
-    localvaluesd(isepavg:isepavg+2) = localvaluesd(isepavg:isepavg+2) + &
-&     sepsensoravgd
     localvalues(isepavg:isepavg+2) = localvalues(isepavg:isepavg+2) + &
 &     sepsensoravg
     localvaluesd(iaxismoment) = localvaluesd(iaxismoment) + mpaxisd + &
@@ -1351,6 +1401,7 @@ contains
     real(kind=realtype), dimension(3) :: fp, fv, mp, mv
     real(kind=realtype) :: yplusmax, sepsensor, sepsensoravg(3), &
 &   cavitation
+    real(kind=realtype) :: norm_dot_free, surf_tan(3), cos_flow_angle
     integer(kind=inttype) :: i, j, ii, blk
     real(kind=realtype) :: pm1, fx, fy, fz, fn
     real(kind=realtype) :: xc, yc, zc, qf(3), r(3), n(3), l
@@ -1488,32 +1539,69 @@ contains
       arg1 = ssi(i, j, 1)**2 + ssi(i, j, 2)**2 + ssi(i, j, 3)**2
       cellarea = sqrt(arg1)
       bcdata(mm)%area(i, j) = cellarea
+! only run the separation computation if we are ahead of the separation cutoff.
+! this is a hack for 2d cases for now, 3d cases will need a better approach here
+      if (xc .lt. 0.9_realtype) then
 ! get normalized surface velocity:
-      v(1) = ww2(i, j, ivx)
-      v(2) = ww2(i, j, ivy)
-      v(3) = ww2(i, j, ivz)
-      arg1 = v(1)**2 + v(2)**2 + v(3)**2
-      result1 = sqrt(arg1)
-      v = v/(result1+1e-16)
+        v(1) = ww2(i, j, ivx)
+        v(2) = ww2(i, j, ivy)
+        v(3) = ww2(i, j, ivz)
+        arg1 = v(1)**2 + v(2)**2 + v(3)**2
+        result1 = sqrt(arg1)
+        v = v/(result1+1e-16)
+! get the surface tangent aligned with the free-stream direction:
+! first, get the dot product of free stream direction and surface normal
+        norm_dot_free = veldirfreestream(1)*bcdata(mm)%norm(i, j, 1) + &
+&         veldirfreestream(2)*bcdata(mm)%norm(i, j, 2) + &
+&         veldirfreestream(3)*bcdata(mm)%norm(i, j, 3)
+! then using the dot product, subtract the normal component of the free stream direction
+! to get the final vector we need, which is the surface tangent
+! aligned with the free stream velocity
+        surf_tan(1) = veldirfreestream(1) - norm_dot_free*bcdata(mm)%&
+&         norm(i, j, 1)
+        surf_tan(2) = veldirfreestream(2) - norm_dot_free*bcdata(mm)%&
+&         norm(i, j, 2)
+        surf_tan(3) = veldirfreestream(3) - norm_dot_free*bcdata(mm)%&
+&         norm(i, j, 3)
+! normalize so that computing the cos is easier
+        arg1 = surf_tan(1)**2 + surf_tan(2)**2 + surf_tan(3)**2
+        result1 = sqrt(arg1)
+        surf_tan = surf_tan/(result1+1e-16)
+! get the cosine of the angle between the first-cell velocity with the surface tangent
+! when this angle hits +- 90 degrees, we say the cell is separated,
+! if its at 0, flow is perfectly aligned.
+! we dont divide by the magnitude of the two vectors because both of them
+! should already be normalized.
+        cos_flow_angle = v(1)*surf_tan(1) + v(2)*surf_tan(2) + v(3)*&
+&         surf_tan(3)
+! we want this number to stay above zero at all times, so we put a ks-max on negative
+! flow angle and constrain it to be below zero.
+! in this first implementation, we just assume the absolute min this can be is -1,
+! but ideally, we should be using the actual min from the flow field. otherwise,
+! this will underflow for rho values around 300 and above.
+        sepsensor = sepsensor + exp(100.0_realtype*(-1.0_realtype-&
+&         cos_flow_angle))*blk
 ! dot product with free stream
-      sensor = -(v(1)*veldirfreestream(1)+v(2)*veldirfreestream(2)+v(3)*&
-&       veldirfreestream(3))
+!   sensor = -(v(1)*veldirfreestream(1) + v(2)*veldirfreestream(2) + &
+!   v(3)*veldirfreestream(3))
 !now run through a smooth heaviside function:
-      arg1 = -(2*sepsensorsharpness*(sensor-sepsensoroffset))
-      sensor = one/(one+exp(arg1))
+!   sensor = one/(one + exp(-2*sepsensorsharpness*(sensor-sepsensoroffset)))
 ! and integrate over the area of this cell and save, blanking as we go.
-      sensor = sensor*cellarea*blk
-      sepsensor = sepsensor + sensor
+!   sensor = sensor * cellarea * blk
+!   sepsensor = sepsensor + sensor
 ! also accumulate into the sepsensoravg
-      xc = fourth*(xx(i, j, 1)+xx(i+1, j, 1)+xx(i, j+1, 1)+xx(i+1, j+1, &
-&       1))
-      yc = fourth*(xx(i, j, 2)+xx(i+1, j, 2)+xx(i, j+1, 2)+xx(i+1, j+1, &
-&       2))
-      zc = fourth*(xx(i, j, 3)+xx(i+1, j, 3)+xx(i, j+1, 3)+xx(i+1, j+1, &
-&       3))
-      sepsensoravg(1) = sepsensoravg(1) + sensor*xc
-      sepsensoravg(2) = sepsensoravg(2) + sensor*yc
-      sepsensoravg(3) = sepsensoravg(3) + sensor*zc
+!   xc = fourth*(xx(i,j,  1) + xx(i+1,j,  1) &
+!        +         xx(i,j+1,1) + xx(i+1,j+1,1))
+!   yc = fourth*(xx(i,j,  2) + xx(i+1,j,  2) &
+!        +         xx(i,j+1,2) + xx(i+1,j+1,2))
+!   zc = fourth*(xx(i,j,  3) + xx(i+1,j,  3) &
+!        +         xx(i,j+1,3) + xx(i+1,j+1,3))
+! todo what to do with the sep sensor average variable?
+! looks like its giving the average location of the separation, not sure how useful though...
+!   sepsensoravg(1) = sepsensoravg(1)  + sensor * xc
+!   sepsensoravg(2) = sepsensoravg(2)  + sensor * yc
+!   sepsensoravg(3) = sepsensoravg(3)  + sensor * zc
+      end if
       if (computecavitation) then
         plocal = pp2(i, j)
         tmp = two/(gammainf*machcoef*machcoef)

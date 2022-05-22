@@ -339,13 +339,19 @@ contains
 &     funcvalues(costfuncforcezcoefmomentum)*dragdirection(3)
     call pushreal8(funcvalues(costfuncdragcoefmomentum))
     funcvalues(costfuncdragcoefmomentum) = tmp14
-! final part of the ks computation
+! final part of the ks computation for cavitation and separation sensors
+    call pushreal8(funcvalues(costfuncsepsensor))
+    funcvalues(costfuncsepsensor) = 1.0 + log(funcvalues(&
+&     costfuncsepsensor))/100_realtype
 ! -------------------- time spectral objectives ------------------
     if (tsstability) then
       stop
     else
       funcvaluesd(costfunccavitation) = funcvaluesd(costfunccavitation)/&
 &       (cavitationrho*funcvalues(costfunccavitation))
+      call popreal8(funcvalues(costfuncsepsensor))
+      funcvaluesd(costfuncsepsensor) = funcvaluesd(costfuncsepsensor)/(&
+&       100_realtype*funcvalues(costfuncsepsensor))
       call popreal8(funcvalues(costfuncdragcoefmomentum))
       tmpd = funcvaluesd(costfuncdragcoefmomentum)
       funcvaluesd(costfuncdragcoefmomentum) = 0.0_8
@@ -1027,7 +1033,9 @@ contains
 &     costfuncforcexcoefmomentum)*dragdirection(1) + funcvalues(&
 &     costfuncforceycoefmomentum)*dragdirection(2) + funcvalues(&
 &     costfuncforcezcoefmomentum)*dragdirection(3)
-! final part of the ks computation
+! final part of the ks computation for cavitation and separation sensors
+    funcvalues(costfuncsepsensor) = 1.0 + log(funcvalues(&
+&     costfuncsepsensor))/100_realtype
     funcvalues(costfunccavitation) = cavitationnumber + log(funcvalues(&
 &     costfunccavitation))/cavitationrho
 ! -------------------- time spectral objectives ------------------
@@ -1085,7 +1093,9 @@ contains
     real(kind=realtype), dimension(3) :: fpd, fvd, mpd, mvd
     real(kind=realtype) :: yplusmax, sepsensor, sepsensoravg(3), &
 &   cavitation
-    real(kind=realtype) :: sepsensord, sepsensoravgd(3), cavitationd
+    real(kind=realtype) :: sepsensord, cavitationd
+    real(kind=realtype) :: norm_dot_free, surf_tan(3), cos_flow_angle
+    real(kind=realtype) :: norm_dot_freed, surf_tand(3), cos_flow_angled
     integer(kind=inttype) :: i, j, ii, blk
     real(kind=realtype) :: pm1, fx, fy, fz, fn
     real(kind=realtype) :: pm1d, fxd, fyd, fzd
@@ -1093,7 +1103,7 @@ contains
     real(kind=realtype) :: xcd, ycd, zcd, rd(3)
     real(kind=realtype) :: fact, rho, mul, yplus, dwall
     real(kind=realtype) :: v(3), sensor, sensor1, cp, tmp, plocal
-    real(kind=realtype) :: vd(3), sensord, sensor1d, cpd, tmpd, plocald
+    real(kind=realtype) :: vd(3), sensor1d, cpd, tmpd, plocald
     real(kind=realtype) :: tauxx, tauyy, tauzz
     real(kind=realtype) :: tauxxd, tauyyd, tauzzd
     real(kind=realtype) :: tauxy, tauxz, tauyz
@@ -1112,19 +1122,20 @@ contains
     intrinsic sqrt
     intrinsic exp
     real(kind=realtype), dimension(3) :: tmp0
+    real(kind=realtype), dimension(3) :: tmp1
     integer :: branch
     real(kind=realtype) :: temp3
     real(kind=realtype) :: tempd14
     real(kind=realtype) :: temp2
     real(kind=realtype) :: tempd13
     real(kind=realtype) :: temp1
-    real(kind=realtype) :: tempd12
+    real(kind=realtype) :: tempd12(3)
     real(kind=realtype) :: temp0
     real(kind=realtype) :: tempd11
-    real(kind=realtype) :: tempd10
+    real(kind=realtype) :: tempd10(3)
     real(kind=realtype) :: tempd9
     real(kind=realtype) :: tempd
-    real(kind=realtype) :: tempd8(3)
+    real(kind=realtype) :: tempd8
     real(kind=realtype) :: tempd7
     real(kind=realtype) :: tempd6
     real(kind=realtype) :: tempd5
@@ -1133,8 +1144,8 @@ contains
     real(kind=realtype) :: tempd2
     real(kind=realtype) :: tempd1
     real(kind=realtype) :: tempd0
+    real(kind=realtype) :: tmpd1(3)
     real(kind=realtype) :: tmpd0(3)
-    real(kind=realtype) :: tempd24
     real(kind=realtype) :: tempd23
     real(kind=realtype) :: tempd22
     real(kind=realtype) :: tempd21
@@ -1169,6 +1180,7 @@ contains
     call pushreal8array(n, 3)
     call pushreal8array(r, 3)
     call pushreal8array(v, 3)
+    call pushreal8array(surf_tan, 3)
 !
 !         integrate the inviscid contribution over the solid walls,
 !         either inviscid or viscous. the integration is done with
@@ -1256,30 +1268,66 @@ contains
       cellarea = sqrt(ssi(i, j, 1)**2 + ssi(i, j, 2)**2 + ssi(i, j, 3)**&
 &       2)
       bcdata(mm)%area(i, j) = cellarea
+! only run the separation computation if we are ahead of the separation cutoff.
+! this is a hack for 2d cases for now, 3d cases will need a better approach here
+      if (xc .lt. 0.9_realtype) then
 ! get normalized surface velocity:
-      v(1) = ww2(i, j, ivx)
-      v(2) = ww2(i, j, ivy)
-      v(3) = ww2(i, j, ivz)
-      v = v/(sqrt(v(1)**2+v(2)**2+v(3)**2)+1e-16)
+        v(1) = ww2(i, j, ivx)
+        v(2) = ww2(i, j, ivy)
+        v(3) = ww2(i, j, ivz)
+        v = v/(sqrt(v(1)**2+v(2)**2+v(3)**2)+1e-16)
+! get the surface tangent aligned with the free-stream direction:
+! first, get the dot product of free stream direction and surface normal
+        norm_dot_free = veldirfreestream(1)*bcdata(mm)%norm(i, j, 1) + &
+&         veldirfreestream(2)*bcdata(mm)%norm(i, j, 2) + &
+&         veldirfreestream(3)*bcdata(mm)%norm(i, j, 3)
+! then using the dot product, subtract the normal component of the free stream direction
+! to get the final vector we need, which is the surface tangent
+! aligned with the free stream velocity
+        surf_tan(1) = veldirfreestream(1) - norm_dot_free*bcdata(mm)%&
+&         norm(i, j, 1)
+        surf_tan(2) = veldirfreestream(2) - norm_dot_free*bcdata(mm)%&
+&         norm(i, j, 2)
+        surf_tan(3) = veldirfreestream(3) - norm_dot_free*bcdata(mm)%&
+&         norm(i, j, 3)
+! normalize so that computing the cos is easier
+        surf_tan = surf_tan/(sqrt(surf_tan(1)**2+surf_tan(2)**2+surf_tan&
+&         (3)**2)+1e-16)
+! get the cosine of the angle between the first-cell velocity with the surface tangent
+! when this angle hits +- 90 degrees, we say the cell is separated,
+! if its at 0, flow is perfectly aligned.
+! we dont divide by the magnitude of the two vectors because both of them
+! should already be normalized.
+        cos_flow_angle = v(1)*surf_tan(1) + v(2)*surf_tan(2) + v(3)*&
+&         surf_tan(3)
+! we want this number to stay above zero at all times, so we put a ks-max on negative
+! flow angle and constrain it to be below zero.
+! in this first implementation, we just assume the absolute min this can be is -1,
+! but ideally, we should be using the actual min from the flow field. otherwise,
+! this will underflow for rho values around 300 and above.
+        sepsensor = sepsensor + exp(100.0_realtype*(-1.0_realtype-&
+&         cos_flow_angle))*blk
 ! dot product with free stream
-      sensor = -(v(1)*veldirfreestream(1)+v(2)*veldirfreestream(2)+v(3)*&
-&       veldirfreestream(3))
+!   sensor = -(v(1)*veldirfreestream(1) + v(2)*veldirfreestream(2) + &
+!   v(3)*veldirfreestream(3))
 !now run through a smooth heaviside function:
-      sensor = one/(one+exp(-(2*sepsensorsharpness*(sensor-&
-&       sepsensoroffset))))
+!   sensor = one/(one + exp(-2*sepsensorsharpness*(sensor-sepsensoroffset)))
 ! and integrate over the area of this cell and save, blanking as we go.
-      sensor = sensor*cellarea*blk
-      sepsensor = sepsensor + sensor
+!   sensor = sensor * cellarea * blk
+!   sepsensor = sepsensor + sensor
 ! also accumulate into the sepsensoravg
-      xc = fourth*(xx(i, j, 1)+xx(i+1, j, 1)+xx(i, j+1, 1)+xx(i+1, j+1, &
-&       1))
-      yc = fourth*(xx(i, j, 2)+xx(i+1, j, 2)+xx(i, j+1, 2)+xx(i+1, j+1, &
-&       2))
-      zc = fourth*(xx(i, j, 3)+xx(i+1, j, 3)+xx(i, j+1, 3)+xx(i+1, j+1, &
-&       3))
-      sepsensoravg(1) = sepsensoravg(1) + sensor*xc
-      sepsensoravg(2) = sepsensoravg(2) + sensor*yc
-      sepsensoravg(3) = sepsensoravg(3) + sensor*zc
+!   xc = fourth*(xx(i,j,  1) + xx(i+1,j,  1) &
+!        +         xx(i,j+1,1) + xx(i+1,j+1,1))
+!   yc = fourth*(xx(i,j,  2) + xx(i+1,j,  2) &
+!        +         xx(i,j+1,2) + xx(i+1,j+1,2))
+!   zc = fourth*(xx(i,j,  3) + xx(i+1,j,  3) &
+!        +         xx(i,j+1,3) + xx(i+1,j+1,3))
+! todo what to do with the sep sensor average variable?
+! looks like its giving the average location of the separation, not sure how useful though...
+!   sepsensoravg(1) = sepsensoravg(1)  + sensor * xc
+!   sepsensoravg(2) = sepsensoravg(2)  + sensor * yc
+!   sepsensoravg(3) = sepsensoravg(3)  + sensor * zc
+      end if
       if (computecavitation) then
         plocal = pp2(i, j)
         tmp = two/(gammainf*machcoef*machcoef)
@@ -1313,8 +1361,6 @@ contains
     cperror2d = localvaluesd(icperror2)
     mpaxisd = localvaluesd(iaxismoment)
     mvaxisd = localvaluesd(iaxismoment)
-    sepsensoravgd = 0.0_8
-    sepsensoravgd = localvaluesd(isepavg:isepavg+2)
     cavitationd = localvaluesd(icavitation)
     sepsensord = localvaluesd(isepsensor)
     mvd = 0.0_8
@@ -1394,10 +1440,10 @@ contains
         mxd = blk*mvd(1)
         myd = blk*mvd(2)
         mzd = blk*mvd(3)
-        tempd15 = blk*mvaxisd
-        m0xd = n(1)*tempd15
-        m0yd = n(2)*tempd15
-        m0zd = n(3)*tempd15
+        tempd14 = blk*mvaxisd
+        m0xd = n(1)*tempd14
+        m0yd = n(2)*tempd14
+        m0zd = n(3)*tempd14
         fzd = blk*fvd(3) - xc*myd - r(1)*m0yd + yc*mxd + r(2)*m0xd + &
 &         bcdatad(mm)%fv(i, j, 3)
         bcdatad(mm)%fv(i, j, 3) = 0.0_8
@@ -1413,67 +1459,67 @@ contains
         rd(1) = rd(1) - fz*m0yd
         rd(2) = rd(2) + fz*m0xd
         rd(3) = rd(3) - fy*m0xd
-        tempd16 = fourth*rd(3)
-        xxd(i, j, 3) = xxd(i, j, 3) + tempd16
-        xxd(i+1, j, 3) = xxd(i+1, j, 3) + tempd16
-        xxd(i, j+1, 3) = xxd(i, j+1, 3) + tempd16
-        xxd(i+1, j+1, 3) = xxd(i+1, j+1, 3) + tempd16
+        tempd15 = fourth*rd(3)
+        xxd(i, j, 3) = xxd(i, j, 3) + tempd15
+        xxd(i+1, j, 3) = xxd(i+1, j, 3) + tempd15
+        xxd(i, j+1, 3) = xxd(i, j+1, 3) + tempd15
+        xxd(i+1, j+1, 3) = xxd(i+1, j+1, 3) + tempd15
         rd(3) = 0.0_8
-        tempd17 = fourth*rd(2)
-        xxd(i, j, 2) = xxd(i, j, 2) + tempd17
-        xxd(i+1, j, 2) = xxd(i+1, j, 2) + tempd17
-        xxd(i, j+1, 2) = xxd(i, j+1, 2) + tempd17
-        xxd(i+1, j+1, 2) = xxd(i+1, j+1, 2) + tempd17
+        tempd16 = fourth*rd(2)
+        xxd(i, j, 2) = xxd(i, j, 2) + tempd16
+        xxd(i+1, j, 2) = xxd(i+1, j, 2) + tempd16
+        xxd(i, j+1, 2) = xxd(i, j+1, 2) + tempd16
+        xxd(i+1, j+1, 2) = xxd(i+1, j+1, 2) + tempd16
         rd(2) = 0.0_8
-        tempd18 = fourth*rd(1)
-        xxd(i, j, 1) = xxd(i, j, 1) + tempd18
-        xxd(i+1, j, 1) = xxd(i+1, j, 1) + tempd18
-        xxd(i, j+1, 1) = xxd(i, j+1, 1) + tempd18
-        xxd(i+1, j+1, 1) = xxd(i+1, j+1, 1) + tempd18
+        tempd17 = fourth*rd(1)
+        xxd(i, j, 1) = xxd(i, j, 1) + tempd17
+        xxd(i+1, j, 1) = xxd(i+1, j, 1) + tempd17
+        xxd(i, j+1, 1) = xxd(i, j+1, 1) + tempd17
+        xxd(i+1, j+1, 1) = xxd(i+1, j+1, 1) + tempd17
         rd(1) = 0.0_8
         xcd = fy*mzd - fz*myd
         ycd = fz*mxd - fx*mzd
         zcd = fx*myd - fy*mxd
-        tempd19 = fourth*zcd
-        xxd(i, j, 3) = xxd(i, j, 3) + tempd19
-        xxd(i+1, j, 3) = xxd(i+1, j, 3) + tempd19
-        xxd(i, j+1, 3) = xxd(i, j+1, 3) + tempd19
-        xxd(i+1, j+1, 3) = xxd(i+1, j+1, 3) + tempd19
+        tempd18 = fourth*zcd
+        xxd(i, j, 3) = xxd(i, j, 3) + tempd18
+        xxd(i+1, j, 3) = xxd(i+1, j, 3) + tempd18
+        xxd(i, j+1, 3) = xxd(i, j+1, 3) + tempd18
+        xxd(i+1, j+1, 3) = xxd(i+1, j+1, 3) + tempd18
         refpointd(3) = refpointd(3) - zcd
-        tempd20 = fourth*ycd
-        xxd(i, j, 2) = xxd(i, j, 2) + tempd20
-        xxd(i+1, j, 2) = xxd(i+1, j, 2) + tempd20
-        xxd(i, j+1, 2) = xxd(i, j+1, 2) + tempd20
-        xxd(i+1, j+1, 2) = xxd(i+1, j+1, 2) + tempd20
+        tempd19 = fourth*ycd
+        xxd(i, j, 2) = xxd(i, j, 2) + tempd19
+        xxd(i+1, j, 2) = xxd(i+1, j, 2) + tempd19
+        xxd(i, j+1, 2) = xxd(i, j+1, 2) + tempd19
+        xxd(i+1, j+1, 2) = xxd(i+1, j+1, 2) + tempd19
         refpointd(2) = refpointd(2) - ycd
-        tempd21 = fourth*xcd
-        xxd(i, j, 1) = xxd(i, j, 1) + tempd21
-        xxd(i+1, j, 1) = xxd(i+1, j, 1) + tempd21
-        xxd(i, j+1, 1) = xxd(i, j+1, 1) + tempd21
-        xxd(i+1, j+1, 1) = xxd(i+1, j+1, 1) + tempd21
+        tempd20 = fourth*xcd
+        xxd(i, j, 1) = xxd(i, j, 1) + tempd20
+        xxd(i+1, j, 1) = xxd(i+1, j, 1) + tempd20
+        xxd(i, j+1, 1) = xxd(i, j+1, 1) + tempd20
+        xxd(i+1, j+1, 1) = xxd(i+1, j+1, 1) + tempd20
         refpointd(1) = refpointd(1) - xcd
-        tempd22 = -(fact*pref*fzd)
-        ssid(i, j, 1) = ssid(i, j, 1) + tauxz*tempd22
-        ssid(i, j, 2) = ssid(i, j, 2) + tauyz*tempd22
-        tauzzd = ssi(i, j, 3)*tempd22
-        ssid(i, j, 3) = ssid(i, j, 3) + tauzz*tempd22
+        tempd21 = -(fact*pref*fzd)
+        ssid(i, j, 1) = ssid(i, j, 1) + tauxz*tempd21
+        ssid(i, j, 2) = ssid(i, j, 2) + tauyz*tempd21
+        tauzzd = ssi(i, j, 3)*tempd21
+        ssid(i, j, 3) = ssid(i, j, 3) + tauzz*tempd21
         prefd = prefd - fact*(tauxz*ssi(i, j, 1)+tauyz*ssi(i, j, 2)+&
 &         tauzz*ssi(i, j, 3))*fzd
-        tempd24 = -(fact*pref*fyd)
-        tauyzd = ssi(i, j, 3)*tempd24 + ssi(i, j, 2)*tempd22
-        ssid(i, j, 1) = ssid(i, j, 1) + tauxy*tempd24
-        tauyyd = ssi(i, j, 2)*tempd24
-        ssid(i, j, 2) = ssid(i, j, 2) + tauyy*tempd24
-        ssid(i, j, 3) = ssid(i, j, 3) + tauyz*tempd24
+        tempd23 = -(fact*pref*fyd)
+        tauyzd = ssi(i, j, 3)*tempd23 + ssi(i, j, 2)*tempd21
+        ssid(i, j, 1) = ssid(i, j, 1) + tauxy*tempd23
+        tauyyd = ssi(i, j, 2)*tempd23
+        ssid(i, j, 2) = ssid(i, j, 2) + tauyy*tempd23
+        ssid(i, j, 3) = ssid(i, j, 3) + tauyz*tempd23
         prefd = prefd - fact*(tauxy*ssi(i, j, 1)+tauyy*ssi(i, j, 2)+&
 &         tauyz*ssi(i, j, 3))*fyd
-        tempd23 = -(fact*pref*fxd)
-        tauxzd = ssi(i, j, 3)*tempd23 + ssi(i, j, 1)*tempd22
-        tauxyd = ssi(i, j, 2)*tempd23 + ssi(i, j, 1)*tempd24
-        tauxxd = ssi(i, j, 1)*tempd23
-        ssid(i, j, 1) = ssid(i, j, 1) + tauxx*tempd23
-        ssid(i, j, 2) = ssid(i, j, 2) + tauxy*tempd23
-        ssid(i, j, 3) = ssid(i, j, 3) + tauxz*tempd23
+        tempd22 = -(fact*pref*fxd)
+        tauxzd = ssi(i, j, 3)*tempd22 + ssi(i, j, 1)*tempd21
+        tauxyd = ssi(i, j, 2)*tempd22 + ssi(i, j, 1)*tempd23
+        tauxxd = ssi(i, j, 1)*tempd22
+        ssid(i, j, 1) = ssid(i, j, 1) + tauxx*tempd22
+        ssid(i, j, 2) = ssid(i, j, 2) + tauxy*tempd22
+        ssid(i, j, 3) = ssid(i, j, 3) + tauxz*tempd22
         prefd = prefd - fact*(tauxx*ssi(i, j, 1)+tauxy*ssi(i, j, 2)+&
 &         tauxz*ssi(i, j, 3))*fxd
         viscsubfaced(mm)%tau(i, j, 6) = viscsubfaced(mm)%tau(i, j, 6) + &
@@ -1503,6 +1549,8 @@ contains
       refpointd = 0.0_8
     end if
     vd = 0.0_8
+    surf_tand = 0.0_8
+    call popreal8array(surf_tan, 3)
     call popreal8array(v, 3)
     call popreal8array(r, 3)
     call popreal8array(n, 3)
@@ -1556,35 +1604,71 @@ contains
 ! used to define the axis, and the project that axis in
 ! the n direction
 ! save the face-based forces and area
-      cellarea = sqrt(ssi(i, j, 1)**2 + ssi(i, j, 2)**2 + ssi(i, j, 3)**&
-&       2)
+! only run the separation computation if we are ahead of the separation cutoff.
+! this is a hack for 2d cases for now, 3d cases will need a better approach here
+      if (xc .lt. 0.9_realtype) then
 ! get normalized surface velocity:
-      v(1) = ww2(i, j, ivx)
-      v(2) = ww2(i, j, ivy)
-      v(3) = ww2(i, j, ivz)
-      tmp0 = v/(sqrt(v(1)**2+v(2)**2+v(3)**2)+1e-16)
-      call pushreal8array(v, 3)
-      v = tmp0
+        v(1) = ww2(i, j, ivx)
+        v(2) = ww2(i, j, ivy)
+        v(3) = ww2(i, j, ivz)
+        tmp0 = v/(sqrt(v(1)**2+v(2)**2+v(3)**2)+1e-16)
+        call pushreal8array(v, 3)
+        v = tmp0
+! get the surface tangent aligned with the free-stream direction:
+! first, get the dot product of free stream direction and surface normal
+        norm_dot_free = veldirfreestream(1)*bcdata(mm)%norm(i, j, 1) + &
+&         veldirfreestream(2)*bcdata(mm)%norm(i, j, 2) + &
+&         veldirfreestream(3)*bcdata(mm)%norm(i, j, 3)
+! then using the dot product, subtract the normal component of the free stream direction
+! to get the final vector we need, which is the surface tangent
+! aligned with the free stream velocity
+        surf_tan(1) = veldirfreestream(1) - norm_dot_free*bcdata(mm)%&
+&         norm(i, j, 1)
+        surf_tan(2) = veldirfreestream(2) - norm_dot_free*bcdata(mm)%&
+&         norm(i, j, 2)
+        surf_tan(3) = veldirfreestream(3) - norm_dot_free*bcdata(mm)%&
+&         norm(i, j, 3)
+! normalize so that computing the cos is easier
+        tmp1 = surf_tan/(sqrt(surf_tan(1)**2+surf_tan(2)**2+surf_tan(3)&
+&         **2)+1e-16)
+        call pushreal8array(surf_tan, 3)
+        surf_tan = tmp1
+! get the cosine of the angle between the first-cell velocity with the surface tangent
+! when this angle hits +- 90 degrees, we say the cell is separated,
+! if its at 0, flow is perfectly aligned.
+! we dont divide by the magnitude of the two vectors because both of them
+! should already be normalized.
+        cos_flow_angle = v(1)*surf_tan(1) + v(2)*surf_tan(2) + v(3)*&
+&         surf_tan(3)
+! we want this number to stay above zero at all times, so we put a ks-max on negative
+! flow angle and constrain it to be below zero.
+! in this first implementation, we just assume the absolute min this can be is -1,
+! but ideally, we should be using the actual min from the flow field. otherwise,
+! this will underflow for rho values around 300 and above.
 ! dot product with free stream
-      sensor = -(v(1)*veldirfreestream(1)+v(2)*veldirfreestream(2)+v(3)*&
-&       veldirfreestream(3))
+!   sensor = -(v(1)*veldirfreestream(1) + v(2)*veldirfreestream(2) + &
+!   v(3)*veldirfreestream(3))
 !now run through a smooth heaviside function:
-      call pushreal8(sensor)
-      sensor = one/(one+exp(-(2*sepsensorsharpness*(sensor-&
-&       sepsensoroffset))))
+!   sensor = one/(one + exp(-2*sepsensorsharpness*(sensor-sepsensoroffset)))
 ! and integrate over the area of this cell and save, blanking as we go.
-      call pushreal8(sensor)
-      sensor = sensor*cellarea*blk
+!   sensor = sensor * cellarea * blk
+!   sepsensor = sepsensor + sensor
 ! also accumulate into the sepsensoravg
-      call pushreal8(xc)
-      xc = fourth*(xx(i, j, 1)+xx(i+1, j, 1)+xx(i, j+1, 1)+xx(i+1, j+1, &
-&       1))
-      call pushreal8(yc)
-      yc = fourth*(xx(i, j, 2)+xx(i+1, j, 2)+xx(i, j+1, 2)+xx(i+1, j+1, &
-&       2))
-      call pushreal8(zc)
-      zc = fourth*(xx(i, j, 3)+xx(i+1, j, 3)+xx(i, j+1, 3)+xx(i+1, j+1, &
-&       3))
+!   xc = fourth*(xx(i,j,  1) + xx(i+1,j,  1) &
+!        +         xx(i,j+1,1) + xx(i+1,j+1,1))
+!   yc = fourth*(xx(i,j,  2) + xx(i+1,j,  2) &
+!        +         xx(i,j+1,2) + xx(i+1,j+1,2))
+!   zc = fourth*(xx(i,j,  3) + xx(i+1,j,  3) &
+!        +         xx(i,j+1,3) + xx(i+1,j+1,3))
+! todo what to do with the sep sensor average variable?
+! looks like its giving the average location of the separation, not sure how useful though...
+!   sepsensoravg(1) = sepsensoravg(1)  + sensor * xc
+!   sepsensoravg(2) = sepsensoravg(2)  + sensor * yc
+!   sepsensoravg(3) = sepsensoravg(3)  + sensor * zc
+        call pushcontrol1b(0)
+      else
+        call pushcontrol1b(1)
+      end if
       if (computecavitation) then
         plocal = pp2(i, j)
         tmp = two/(gammainf*machcoef*machcoef)
@@ -1604,81 +1688,86 @@ contains
         tmp = two/(gammainf*pinf*machcoef*machcoef)
         pp2d(i, j) = pp2d(i, j) + plocald
       end if
+      call popcontrol1b(branch)
+      if (branch .eq. 0) then
+        cos_flow_angled = -(100.0_realtype*exp(100.0_realtype*((&
+&         -1.0_realtype)-cos_flow_angle))*blk*sepsensord)
+        vd(1) = vd(1) + surf_tan(1)*cos_flow_angled
+        surf_tand(1) = surf_tand(1) + v(1)*cos_flow_angled
+        vd(2) = vd(2) + surf_tan(2)*cos_flow_angled
+        surf_tand(2) = surf_tand(2) + v(2)*cos_flow_angled
+        vd(3) = vd(3) + surf_tan(3)*cos_flow_angled
+        surf_tand(3) = surf_tand(3) + v(3)*cos_flow_angled
+        call popreal8array(surf_tan, 3)
+        tmpd0 = surf_tand
+        temp2 = surf_tan(1)**2 + surf_tan(2)**2 + surf_tan(3)**2
+        temp3 = sqrt(temp2)
+        tempd10 = tmpd0/(temp3+1e-16)
+        surf_tand = tempd10
+        if (temp2 .eq. 0.0_8) then
+          tempd11 = 0.0
+        else
+          tempd11 = sum(-(surf_tan*tempd10/(temp3+1e-16)))/(2.0*temp3)
+        end if
+        surf_tand(1) = surf_tand(1) + 2*surf_tan(1)*tempd11
+        surf_tand(2) = surf_tand(2) + 2*surf_tan(2)*tempd11
+        surf_tand(3) = surf_tand(3) + 2*surf_tan(3)*tempd11
+        veldirfreestreamd(3) = veldirfreestreamd(3) + surf_tand(3)
+        norm_dot_freed = -(bcdata(mm)%norm(i, j, 3)*surf_tand(3))
+        surf_tand(3) = 0.0_8
+        veldirfreestreamd(2) = veldirfreestreamd(2) + surf_tand(2)
+        norm_dot_freed = norm_dot_freed - bcdata(mm)%norm(i, j, 2)*&
+&         surf_tand(2)
+        surf_tand(2) = 0.0_8
+        norm_dot_freed = norm_dot_freed - bcdata(mm)%norm(i, j, 1)*&
+&         surf_tand(1)
+        veldirfreestreamd(1) = veldirfreestreamd(1) + bcdata(mm)%norm(i&
+&         , j, 1)*norm_dot_freed + surf_tand(1)
+        surf_tand(1) = 0.0_8
+        veldirfreestreamd(2) = veldirfreestreamd(2) + bcdata(mm)%norm(i&
+&         , j, 2)*norm_dot_freed
+        veldirfreestreamd(3) = veldirfreestreamd(3) + bcdata(mm)%norm(i&
+&         , j, 3)*norm_dot_freed
+        call popreal8array(v, 3)
+        tmpd1 = vd
+        temp0 = v(1)**2 + v(2)**2 + v(3)**2
+        temp1 = sqrt(temp0)
+        tempd12 = tmpd1/(temp1+1e-16)
+        vd = tempd12
+        if (temp0 .eq. 0.0_8) then
+          tempd13 = 0.0
+        else
+          tempd13 = sum(-(v*tempd12/(temp1+1e-16)))/(2.0*temp1)
+        end if
+        vd(1) = vd(1) + 2*v(1)*tempd13
+        vd(2) = vd(2) + 2*v(2)*tempd13
+        vd(3) = vd(3) + 2*v(3)*tempd13
+        ww2d(i, j, ivz) = ww2d(i, j, ivz) + vd(3)
+        vd(3) = 0.0_8
+        ww2d(i, j, ivy) = ww2d(i, j, ivy) + vd(2)
+        vd(2) = 0.0_8
+        ww2d(i, j, ivx) = ww2d(i, j, ivx) + vd(1)
+        vd(1) = 0.0_8
+      end if
       mxd = blk*mpd(1)
       myd = blk*mpd(2)
       mzd = blk*mpd(3)
-      tempd11 = blk*mpaxisd
-      m0xd = n(1)*tempd11
-      m0yd = n(2)*tempd11
-      m0zd = n(3)*tempd11
-      sensord = yc*sepsensoravgd(2) + sepsensord + xc*sepsensoravgd(1) +&
-&       zc*sepsensoravgd(3)
-      zcd = sensor*sepsensoravgd(3)
-      ycd = sensor*sepsensoravgd(2)
-      xcd = sensor*sepsensoravgd(1)
-      call popreal8(zc)
-      tempd5 = fourth*zcd
-      xxd(i, j, 3) = xxd(i, j, 3) + tempd5
-      xxd(i+1, j, 3) = xxd(i+1, j, 3) + tempd5
-      xxd(i, j+1, 3) = xxd(i, j+1, 3) + tempd5
-      xxd(i+1, j+1, 3) = xxd(i+1, j+1, 3) + tempd5
-      call popreal8(yc)
-      tempd6 = fourth*ycd
-      xxd(i, j, 2) = xxd(i, j, 2) + tempd6
-      xxd(i+1, j, 2) = xxd(i+1, j, 2) + tempd6
-      xxd(i, j+1, 2) = xxd(i, j+1, 2) + tempd6
-      xxd(i+1, j+1, 2) = xxd(i+1, j+1, 2) + tempd6
-      call popreal8(xc)
-      tempd7 = fourth*xcd
-      xxd(i, j, 1) = xxd(i, j, 1) + tempd7
-      xxd(i+1, j, 1) = xxd(i+1, j, 1) + tempd7
-      xxd(i, j+1, 1) = xxd(i, j+1, 1) + tempd7
-      xxd(i+1, j+1, 1) = xxd(i+1, j+1, 1) + tempd7
-      call popreal8(sensor)
-      cellaread = blk*sensor*sensord
-      sensord = blk*cellarea*sensord
-      call popreal8(sensor)
-      temp3 = -(2*sepsensorsharpness*(sensor-sepsensoroffset))
-      temp2 = one + exp(temp3)
-      sensord = exp(temp3)*one*sepsensorsharpness*2*sensord/temp2**2
-      vd(1) = vd(1) - veldirfreestream(1)*sensord
-      veldirfreestreamd(1) = veldirfreestreamd(1) - v(1)*sensord
-      vd(2) = vd(2) - veldirfreestream(2)*sensord
-      veldirfreestreamd(2) = veldirfreestreamd(2) - v(2)*sensord
-      vd(3) = vd(3) - veldirfreestream(3)*sensord
-      veldirfreestreamd(3) = veldirfreestreamd(3) - v(3)*sensord
-      call popreal8array(v, 3)
-      tmpd0 = vd
-      temp0 = v(1)**2 + v(2)**2 + v(3)**2
-      temp1 = sqrt(temp0)
-      tempd8 = tmpd0/(temp1+1e-16)
-      vd = tempd8
-      if (temp0 .eq. 0.0_8) then
-        tempd9 = 0.0
-      else
-        tempd9 = sum(-(v*tempd8/(temp1+1e-16)))/(2.0*temp1)
-      end if
-      vd(1) = vd(1) + 2*v(1)*tempd9
-      vd(2) = vd(2) + 2*v(2)*tempd9
-      vd(3) = vd(3) + 2*v(3)*tempd9
-      ww2d(i, j, ivz) = ww2d(i, j, ivz) + vd(3)
-      vd(3) = 0.0_8
-      ww2d(i, j, ivy) = ww2d(i, j, ivy) + vd(2)
-      vd(2) = 0.0_8
-      ww2d(i, j, ivx) = ww2d(i, j, ivx) + vd(1)
-      vd(1) = 0.0_8
-      cellaread = cellaread + bcdatad(mm)%area(i, j)
+      tempd6 = blk*mpaxisd
+      m0xd = n(1)*tempd6
+      m0yd = n(2)*tempd6
+      m0zd = n(3)*tempd6
+      cellaread = bcdatad(mm)%area(i, j)
       bcdatad(mm)%area(i, j) = 0.0_8
       if (ssi(i, j, 1)**2 + ssi(i, j, 2)**2 + ssi(i, j, 3)**2 .eq. 0.0_8&
 &     ) then
-        tempd10 = 0.0
+        tempd5 = 0.0
       else
-        tempd10 = cellaread/(2.0*sqrt(ssi(i, j, 1)**2+ssi(i, j, 2)**2+&
-&         ssi(i, j, 3)**2))
+        tempd5 = cellaread/(2.0*sqrt(ssi(i, j, 1)**2+ssi(i, j, 2)**2+ssi&
+&         (i, j, 3)**2))
       end if
-      ssid(i, j, 1) = ssid(i, j, 1) + 2*ssi(i, j, 1)*tempd10
-      ssid(i, j, 2) = ssid(i, j, 2) + 2*ssi(i, j, 2)*tempd10
-      ssid(i, j, 3) = ssid(i, j, 3) + 2*ssi(i, j, 3)*tempd10
+      ssid(i, j, 1) = ssid(i, j, 1) + 2*ssi(i, j, 1)*tempd5
+      ssid(i, j, 2) = ssid(i, j, 2) + 2*ssi(i, j, 2)*tempd5
+      ssid(i, j, 3) = ssid(i, j, 3) + 2*ssi(i, j, 3)*tempd5
       fzd = blk*fpd(3) - xc*myd - r(1)*m0yd + yc*mxd + r(2)*m0xd + &
 &       bcdatad(mm)%fp(i, j, 3)
       bcdatad(mm)%fp(i, j, 3) = 0.0_8
@@ -1694,23 +1783,23 @@ contains
       rd(1) = rd(1) - fz*m0yd
       rd(2) = rd(2) + fz*m0xd
       rd(3) = rd(3) - fy*m0xd
-      tempd12 = fourth*rd(3)
-      xxd(i, j, 3) = xxd(i, j, 3) + tempd12
-      xxd(i+1, j, 3) = xxd(i+1, j, 3) + tempd12
-      xxd(i, j+1, 3) = xxd(i, j+1, 3) + tempd12
-      xxd(i+1, j+1, 3) = xxd(i+1, j+1, 3) + tempd12
+      tempd7 = fourth*rd(3)
+      xxd(i, j, 3) = xxd(i, j, 3) + tempd7
+      xxd(i+1, j, 3) = xxd(i+1, j, 3) + tempd7
+      xxd(i, j+1, 3) = xxd(i, j+1, 3) + tempd7
+      xxd(i+1, j+1, 3) = xxd(i+1, j+1, 3) + tempd7
       rd(3) = 0.0_8
-      tempd13 = fourth*rd(2)
-      xxd(i, j, 2) = xxd(i, j, 2) + tempd13
-      xxd(i+1, j, 2) = xxd(i+1, j, 2) + tempd13
-      xxd(i, j+1, 2) = xxd(i, j+1, 2) + tempd13
-      xxd(i+1, j+1, 2) = xxd(i+1, j+1, 2) + tempd13
+      tempd8 = fourth*rd(2)
+      xxd(i, j, 2) = xxd(i, j, 2) + tempd8
+      xxd(i+1, j, 2) = xxd(i+1, j, 2) + tempd8
+      xxd(i, j+1, 2) = xxd(i, j+1, 2) + tempd8
+      xxd(i+1, j+1, 2) = xxd(i+1, j+1, 2) + tempd8
       rd(2) = 0.0_8
-      tempd14 = fourth*rd(1)
-      xxd(i, j, 1) = xxd(i, j, 1) + tempd14
-      xxd(i+1, j, 1) = xxd(i+1, j, 1) + tempd14
-      xxd(i, j+1, 1) = xxd(i, j+1, 1) + tempd14
-      xxd(i+1, j+1, 1) = xxd(i+1, j+1, 1) + tempd14
+      tempd9 = fourth*rd(1)
+      xxd(i, j, 1) = xxd(i, j, 1) + tempd9
+      xxd(i+1, j, 1) = xxd(i+1, j, 1) + tempd9
+      xxd(i, j+1, 1) = xxd(i, j+1, 1) + tempd9
+      xxd(i+1, j+1, 1) = xxd(i+1, j+1, 1) + tempd9
       rd(1) = 0.0_8
       xcd = fy*mzd - fz*myd
       ycd = fz*mxd - fx*mzd
@@ -1787,6 +1876,7 @@ contains
     real(kind=realtype), dimension(3) :: fp, fv, mp, mv
     real(kind=realtype) :: yplusmax, sepsensor, sepsensoravg(3), &
 &   cavitation
+    real(kind=realtype) :: norm_dot_free, surf_tan(3), cos_flow_angle
     integer(kind=inttype) :: i, j, ii, blk
     real(kind=realtype) :: pm1, fx, fy, fz, fn
     real(kind=realtype) :: xc, yc, zc, qf(3), r(3), n(3), l
@@ -1921,30 +2011,66 @@ contains
       cellarea = sqrt(ssi(i, j, 1)**2 + ssi(i, j, 2)**2 + ssi(i, j, 3)**&
 &       2)
       bcdata(mm)%area(i, j) = cellarea
+! only run the separation computation if we are ahead of the separation cutoff.
+! this is a hack for 2d cases for now, 3d cases will need a better approach here
+      if (xc .lt. 0.9_realtype) then
 ! get normalized surface velocity:
-      v(1) = ww2(i, j, ivx)
-      v(2) = ww2(i, j, ivy)
-      v(3) = ww2(i, j, ivz)
-      v = v/(sqrt(v(1)**2+v(2)**2+v(3)**2)+1e-16)
+        v(1) = ww2(i, j, ivx)
+        v(2) = ww2(i, j, ivy)
+        v(3) = ww2(i, j, ivz)
+        v = v/(sqrt(v(1)**2+v(2)**2+v(3)**2)+1e-16)
+! get the surface tangent aligned with the free-stream direction:
+! first, get the dot product of free stream direction and surface normal
+        norm_dot_free = veldirfreestream(1)*bcdata(mm)%norm(i, j, 1) + &
+&         veldirfreestream(2)*bcdata(mm)%norm(i, j, 2) + &
+&         veldirfreestream(3)*bcdata(mm)%norm(i, j, 3)
+! then using the dot product, subtract the normal component of the free stream direction
+! to get the final vector we need, which is the surface tangent
+! aligned with the free stream velocity
+        surf_tan(1) = veldirfreestream(1) - norm_dot_free*bcdata(mm)%&
+&         norm(i, j, 1)
+        surf_tan(2) = veldirfreestream(2) - norm_dot_free*bcdata(mm)%&
+&         norm(i, j, 2)
+        surf_tan(3) = veldirfreestream(3) - norm_dot_free*bcdata(mm)%&
+&         norm(i, j, 3)
+! normalize so that computing the cos is easier
+        surf_tan = surf_tan/(sqrt(surf_tan(1)**2+surf_tan(2)**2+surf_tan&
+&         (3)**2)+1e-16)
+! get the cosine of the angle between the first-cell velocity with the surface tangent
+! when this angle hits +- 90 degrees, we say the cell is separated,
+! if its at 0, flow is perfectly aligned.
+! we dont divide by the magnitude of the two vectors because both of them
+! should already be normalized.
+        cos_flow_angle = v(1)*surf_tan(1) + v(2)*surf_tan(2) + v(3)*&
+&         surf_tan(3)
+! we want this number to stay above zero at all times, so we put a ks-max on negative
+! flow angle and constrain it to be below zero.
+! in this first implementation, we just assume the absolute min this can be is -1,
+! but ideally, we should be using the actual min from the flow field. otherwise,
+! this will underflow for rho values around 300 and above.
+        sepsensor = sepsensor + exp(100.0_realtype*(-1.0_realtype-&
+&         cos_flow_angle))*blk
 ! dot product with free stream
-      sensor = -(v(1)*veldirfreestream(1)+v(2)*veldirfreestream(2)+v(3)*&
-&       veldirfreestream(3))
+!   sensor = -(v(1)*veldirfreestream(1) + v(2)*veldirfreestream(2) + &
+!   v(3)*veldirfreestream(3))
 !now run through a smooth heaviside function:
-      sensor = one/(one+exp(-(2*sepsensorsharpness*(sensor-&
-&       sepsensoroffset))))
+!   sensor = one/(one + exp(-2*sepsensorsharpness*(sensor-sepsensoroffset)))
 ! and integrate over the area of this cell and save, blanking as we go.
-      sensor = sensor*cellarea*blk
-      sepsensor = sepsensor + sensor
+!   sensor = sensor * cellarea * blk
+!   sepsensor = sepsensor + sensor
 ! also accumulate into the sepsensoravg
-      xc = fourth*(xx(i, j, 1)+xx(i+1, j, 1)+xx(i, j+1, 1)+xx(i+1, j+1, &
-&       1))
-      yc = fourth*(xx(i, j, 2)+xx(i+1, j, 2)+xx(i, j+1, 2)+xx(i+1, j+1, &
-&       2))
-      zc = fourth*(xx(i, j, 3)+xx(i+1, j, 3)+xx(i, j+1, 3)+xx(i+1, j+1, &
-&       3))
-      sepsensoravg(1) = sepsensoravg(1) + sensor*xc
-      sepsensoravg(2) = sepsensoravg(2) + sensor*yc
-      sepsensoravg(3) = sepsensoravg(3) + sensor*zc
+!   xc = fourth*(xx(i,j,  1) + xx(i+1,j,  1) &
+!        +         xx(i,j+1,1) + xx(i+1,j+1,1))
+!   yc = fourth*(xx(i,j,  2) + xx(i+1,j,  2) &
+!        +         xx(i,j+1,2) + xx(i+1,j+1,2))
+!   zc = fourth*(xx(i,j,  3) + xx(i+1,j,  3) &
+!        +         xx(i,j+1,3) + xx(i+1,j+1,3))
+! todo what to do with the sep sensor average variable?
+! looks like its giving the average location of the separation, not sure how useful though...
+!   sepsensoravg(1) = sepsensoravg(1)  + sensor * xc
+!   sepsensoravg(2) = sepsensoravg(2)  + sensor * yc
+!   sepsensoravg(3) = sepsensoravg(3)  + sensor * zc
+      end if
       if (computecavitation) then
         plocal = pp2(i, j)
         tmp = two/(gammainf*machcoef*machcoef)
