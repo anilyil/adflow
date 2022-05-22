@@ -1404,8 +1404,8 @@ contains
     real(kind=realType), dimension(*), intent(out) :: buffer
     character(len=*), intent(in) :: solName
     logical, intent(in) :: viscousSubface, useRindLayer
-    
-    ! if useRindLayer is true, then iBeg, iEnd, jBeg, jEnd are use to determine 
+
+    ! if useRindLayer is true, then iBeg, iEnd, jBeg, jEnd are use to determine
     ! when the indices are in the rind layer.
     integer(kind=intType), optional, intent(in) :: iBeg, iEnd, jBeg, jEnd
     !
@@ -1426,6 +1426,7 @@ contains
     real(kind=realType) :: tauxx, tauyy, tauzz
     real(kind=realType) :: tauxy, tauxz, tauyz
     real(kind=realType) :: pm1, a, sensor, plocal, sensor1
+    real(kind=realType) :: norm_dot_free, surf_tan(3), cos_flow_angle
     real(kind=realType), dimension(3) :: norm, V
 
     real(kind=realType), dimension(:,:,:), pointer :: ww1, ww2
@@ -1438,7 +1439,7 @@ contains
 
     ! The original i,j beging of the local block in the entire cgns block.
     real(kind=realType) :: subface_jBegOr, subface_jEndOr, subface_iBegOr, subface_iEndOr
-    
+
     ! Set the pointers to this block.
     call setPointers(blockID, 1_intType, sps)
 
@@ -1525,10 +1526,10 @@ contains
        if(equations == RANSEquations) dd2Wall => d2Wall(2,:,:)
        subface_iBegOr = jBegOr
        subface_iEndOr = jEndOr
-       
+
        subface_jBegOr = kBegOr
        subface_jEndOr = kEndOr
-       
+
        !===============================================================
 
     case (iMax)
@@ -1554,13 +1555,13 @@ contains
        endif
 
        if(equations == RANSEquations) dd2Wall => d2Wall(il,:,:)
-       
+
        subface_iBegOr = jBegOr
        subface_iEndOr = jEndOr
-       
+
        subface_jBegOr = kBegOr
        subface_jEndOr = kEndOr
-       
+
        !===============================================================
 
     case (jMin)
@@ -1587,10 +1588,10 @@ contains
 
        if(equations == RANSEquations) dd2Wall => d2Wall(:,2,:)
 
-              
+
        subface_iBegOr = iBegOr
        subface_iEndOr = iEndOr
-       
+
        subface_jBegOr = kBegOr
        subface_jEndOr = kEndOr
 
@@ -1622,7 +1623,7 @@ contains
 
        subface_iBegOr = iBegOr
        subface_iEndOr = iEndOr
-       
+
        subface_jBegOr = kBegOr
        subface_jEndOr = kEndOr
 
@@ -1654,7 +1655,7 @@ contains
 
        subface_iBegOr = iBegOr
        subface_iEndOr = iEndOr
-       
+
        subface_jBegOr = jBegOr
        subface_jEndOr = jEndOr
 
@@ -1686,7 +1687,7 @@ contains
 
        subface_iBegOr = iBegOr
        subface_iEndOr = iEndOr
-       
+
        subface_jBegOr = jBegOr
        subface_jEndOr = jEndOr
 
@@ -1927,14 +1928,14 @@ contains
          ! if statements are used to copy the value of the interior
          ! cell since the value isn't defined in the rind cell
 
-         if (present(jBeg) .and. present(jEnd) .and. (useRindLayer)) then 
+         if (present(jBeg) .and. present(jEnd) .and. (useRindLayer)) then
             jor = j + subface_jBegOr - 1
-            if (jor == jBeg) then 
-               jj = j + 1 
+            if (jor == jBeg) then
+               jj = j + 1
             else if (jor == jEnd +1 ) then
                jj = j - 1
             else
-               jj = j 
+               jj = j
             endif
          else
             jj = j
@@ -1942,19 +1943,19 @@ contains
          end if
 
           do i=rangeFace(1,1), rangeFace(1,2)
-             if (present(iBeg) .and. present( iEnd) .and. (useRindLayer)) then 
+             if (present(iBeg) .and. present( iEnd) .and. (useRindLayer)) then
                ior = i + subface_iBegOr - 1
-               if (ior == iBeg) then 
-                  ii = i + 1 
+               if (ior == iBeg) then
+                  ii = i + 1
                else if (ior == iEnd + 1) then
                   ii = i - 1
                else
-                  ii = i 
+                  ii = i
                endif
             else
                ii = i
             endif
-            
+
              ! Determine the viscous subface on which this
              ! face is located.
 
@@ -2040,14 +2041,14 @@ contains
          ! if statements are used to copy the value of the interior
          ! cell since the value isn't defined in the rind cell
 
-         if (present(jBeg) .and. present(jEnd) .and. (useRindLayer)) then 
+         if (present(jBeg) .and. present(jEnd) .and. (useRindLayer)) then
             jor = j + jBegOr - 1
-            if (jor == jBeg) then 
-               jj = j + 1 
+            if (jor == jBeg) then
+               jj = j + 1
             else if (jor == jEnd + 1) then
                jj = j - 1
             else
-               jj = j 
+               jj = j
             endif
          else
             jj = j
@@ -2055,14 +2056,14 @@ contains
          end if
 
           do i=rangeFace(1,1), rangeFace(1,2)
-             if (present(iBeg) .and. present( iEnd) .and. (useRindLayer)) then 
+             if (present(iBeg) .and. present( iEnd) .and. (useRindLayer)) then
                ior = i + iBegor - 1
-               if (ior == iBeg) then 
-                  ii = i + 1 
+               if (ior == iBeg) then
+                  ii = i + 1
                else if (ior == iEnd + 1) then
                   ii = i - 1
                else
-                  ii = i 
+                  ii = i
                endif
             else
                ii = i
@@ -2111,7 +2112,43 @@ contains
     case (cgnsSepSensor)
 
        do j=rangeFace(2,1), rangeFace(2,2)
+
+         ! if statements are used to copy the value of the interior
+         ! cell since the value isn't defined in the rind cell
+
+         if (present(jBeg) .and. present(jEnd) .and. (useRindLayer)) then
+            jor = j + subface_jBegOr - 1
+            if (jor == jBeg) then
+               jj = j + 1
+            else if (jor == jEnd +1 ) then
+               jj = j - 1
+            else
+               jj = j
+            endif
+         else
+            jj = j
+
+         end if
+
           do i=rangeFace(1,1), rangeFace(1,2)
+             if (present(iBeg) .and. present( iEnd) .and. (useRindLayer)) then
+               ior = i + subface_iBegOr - 1
+               if (ior == iBeg) then
+                  ii = i + 1
+               else if (ior == iEnd + 1) then
+                  ii = i - 1
+               else
+                  ii = i
+               endif
+            else
+               ii = i
+            endif
+
+             ! Determine the viscous subface on which this
+             ! face is located.
+
+             mm = viscPointer(ii,jj)
+
              nn = nn + 1
 
              ! Get normalized surface velocity:
@@ -2122,12 +2159,36 @@ contains
              ! Normalize
              v = v / (sqrt(v(1)**2 + v(2)**2 + v(3)**2) + 1e-16)
 
-             ! Dot product with free stream
-             sensor = -dot_product(v, velDirFreeStream)
+             ! TODO accessing BCDATA straight up in the math breaks the code somehow?
+             norm(1) = BCData(mm)%norm(ii,jj,1)
+             norm(2) = BCData(mm)%norm(ii,jj,2)
+             norm(3) = BCData(mm)%norm(ii,jj,3)
 
-             !Now run through a smooth heaviside function:
-             sensor = one/(one + exp(-2*sepSensorSharpness*(sensor - sepSensorOffset)))
-             buffer(nn) = sensor
+             ! get the surface tangent aligned with the free-stream direction:
+             ! first, get the dot product of free stream direction and surface normal
+             norm_dot_free = velDirFreeStream(1) * norm(1) + &
+                             velDirFreeStream(2) * norm(2) + &
+                             velDirFreeStream(3) * norm(3)
+
+            ! then using the dot product, subtract the normal component of the free stream direction
+            ! to get the final vector we need, which is the surface tangent
+            ! aligned with the free stream velocity
+            surf_tan(1) = velDirFreeStream(1) - norm_dot_free * norm(1)
+            surf_tan(2) = velDirFreeStream(2) - norm_dot_free * norm(2)
+            surf_tan(3) = velDirFreeStream(3) - norm_dot_free * norm(3)
+
+            ! normalize so that computing the cos is easier
+            surf_tan = surf_tan / (sqrt(surf_tan(1)**2 + surf_tan(2)**2 + surf_tan(3)**2) + 1e-16)
+
+            ! get the cosine of the angle between the first-cell velocity with the surface tangent
+            ! when this angle hits +- 90 degrees, we say the cell is separated,
+            ! if its at 0, flow is perfectly aligned.
+            ! we dont divide by the magnitude of the two vectors because both of them
+            ! should already be normalized.
+            cos_flow_angle = v(1) * surf_tan(1) + v(2) * surf_tan(2) + v(3) * surf_tan(3)
+
+            ! the new sensor is the negative of the cosine of the angle. 1.0 is separated, -1.0 is attached, 0.0 is right when it separates
+             buffer(nn) = -cos_flow_angle
           enddo
        enddo
 
