@@ -18,6 +18,7 @@ contains
     use inputphysics, only : liftdirection, dragdirection, surfaceref,&
 &   machcoef, lengthref, alpha, beta, liftindex, cavitationnumber, &
 &   cavitationrho
+    use inputcostfunctions, only : sepsensorrho
     use inputtsstabderiv, only : tsstability
     use utils_fast_b, only : computetsderivatives
     use flowutils_fast_b, only : getdirvector
@@ -263,7 +264,7 @@ contains
 &     costfuncforcezcoefmomentum)*dragdirection(3)
 ! final part of the ks computation for cavitation and separation sensors
     funcvalues(costfuncsepsensor) = 1.0 + log(funcvalues(&
-&     costfuncsepsensor))/100_realtype
+&     costfuncsepsensor))/sepsensorrho
     funcvalues(costfunccavitation) = cavitationnumber + log(funcvalues(&
 &     costfunccavitation))/cavitationrho
 ! -------------------- time spectral objectives ------------------
@@ -439,7 +440,9 @@ contains
       bcdata(mm)%area(i, j) = cellarea
 ! only run the separation computation if we are ahead of the separation cutoff.
 ! this is a hack for 2d cases for now, 3d cases will need a better approach here
-      if (xc .lt. 0.9_realtype) then
+      xc = fourth*(xx(i, j, 1)+xx(i+1, j, 1)+xx(i, j+1, 1)+xx(i+1, j+1, &
+&       1))
+      if (xc .lt. sepsensorcutoff) then
 ! get normalized surface velocity:
         v(1) = ww2(i, j, ivx)
         v(2) = ww2(i, j, ivy)
@@ -474,7 +477,7 @@ contains
 ! in this first implementation, we just assume the absolute min this can be is -1,
 ! but ideally, we should be using the actual min from the flow field. otherwise,
 ! this will underflow for rho values around 300 and above.
-        sepsensor = sepsensor + exp(100.0_realtype*(-1.0_realtype-&
+        sepsensor = sepsensor + exp(sepsensorrho*(-1.0_realtype-&
 &         cos_flow_angle))*blk
 ! dot product with free stream
 !   sensor = -(v(1)*veldirfreestream(1) + v(2)*veldirfreestream(2) + &

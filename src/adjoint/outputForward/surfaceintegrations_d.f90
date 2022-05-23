@@ -26,6 +26,7 @@ contains
 &   dragdirection, dragdirectiond, surfaceref, machcoef, machcoefd, &
 &   lengthref, alpha, alphad, beta, betad, liftindex, cavitationnumber, &
 &   cavitationrho
+    use inputcostfunctions, only : sepsensorrho
     use inputtsstabderiv, only : tsstability
     use utils_d, only : computetsderivatives
     use flowutils_d, only : getdirvector, getdirvector_d
@@ -537,9 +538,9 @@ contains
 &     costfuncforcezcoefmomentum)*dragdirection(3)
 ! final part of the ks computation for cavitation and separation sensors
     funcvaluesd(costfuncsepsensor) = funcvaluesd(costfuncsepsensor)/&
-&     funcvalues(costfuncsepsensor)/100_realtype
+&     funcvalues(costfuncsepsensor)/sepsensorrho
     funcvalues(costfuncsepsensor) = 1.0 + log(funcvalues(&
-&     costfuncsepsensor))/100_realtype
+&     costfuncsepsensor))/sepsensorrho
     funcvaluesd(costfunccavitation) = funcvaluesd(costfunccavitation)/&
 &     funcvalues(costfunccavitation)/cavitationrho
     funcvalues(costfunccavitation) = cavitationnumber + log(funcvalues(&
@@ -560,6 +561,7 @@ contains
     use inputphysics, only : liftdirection, dragdirection, surfaceref,&
 &   machcoef, lengthref, alpha, beta, liftindex, cavitationnumber, &
 &   cavitationrho
+    use inputcostfunctions, only : sepsensorrho
     use inputtsstabderiv, only : tsstability
     use utils_d, only : computetsderivatives
     use flowutils_d, only : getdirvector
@@ -807,7 +809,7 @@ contains
 &     costfuncforcezcoefmomentum)*dragdirection(3)
 ! final part of the ks computation for cavitation and separation sensors
     funcvalues(costfuncsepsensor) = 1.0 + log(funcvalues(&
-&     costfuncsepsensor))/100_realtype
+&     costfuncsepsensor))/sepsensorrho
     funcvalues(costfunccavitation) = cavitationnumber + log(funcvalues(&
 &     costfunccavitation))/cavitationrho
 ! -------------------- time spectral objectives ------------------
@@ -1076,7 +1078,9 @@ contains
       bcdata(mm)%area(i, j) = cellarea
 ! only run the separation computation if we are ahead of the separation cutoff.
 ! this is a hack for 2d cases for now, 3d cases will need a better approach here
-      if (xc .lt. 0.9_realtype) then
+      xc = fourth*(xx(i, j, 1)+xx(i+1, j, 1)+xx(i, j+1, 1)+xx(i+1, j+1, &
+&       1))
+      if (xc .lt. sepsensorcutoff) then
 ! get normalized surface velocity:
         vd(1) = ww2d(i, j, ivx)
         v(1) = ww2(i, j, ivx)
@@ -1145,9 +1149,9 @@ contains
 ! in this first implementation, we just assume the absolute min this can be is -1,
 ! but ideally, we should be using the actual min from the flow field. otherwise,
 ! this will underflow for rho values around 300 and above.
-        sepsensord = sepsensord - blk*100.0_realtype*cos_flow_angled*exp&
-&         (100.0_realtype*(-1.0_realtype-cos_flow_angle))
-        sepsensor = sepsensor + exp(100.0_realtype*(-1.0_realtype-&
+        sepsensord = sepsensord - blk*sepsensorrho*cos_flow_angled*exp(&
+&         sepsensorrho*(-1.0_realtype-cos_flow_angle))
+        sepsensor = sepsensor + exp(sepsensorrho*(-1.0_realtype-&
 &         cos_flow_angle))*blk
 ! dot product with free stream
 !   sensor = -(v(1)*veldirfreestream(1) + v(2)*veldirfreestream(2) + &
@@ -1541,7 +1545,9 @@ contains
       bcdata(mm)%area(i, j) = cellarea
 ! only run the separation computation if we are ahead of the separation cutoff.
 ! this is a hack for 2d cases for now, 3d cases will need a better approach here
-      if (xc .lt. 0.9_realtype) then
+      xc = fourth*(xx(i, j, 1)+xx(i+1, j, 1)+xx(i, j+1, 1)+xx(i+1, j+1, &
+&       1))
+      if (xc .lt. sepsensorcutoff) then
 ! get normalized surface velocity:
         v(1) = ww2(i, j, ivx)
         v(2) = ww2(i, j, ivy)
@@ -1579,7 +1585,7 @@ contains
 ! in this first implementation, we just assume the absolute min this can be is -1,
 ! but ideally, we should be using the actual min from the flow field. otherwise,
 ! this will underflow for rho values around 300 and above.
-        sepsensor = sepsensor + exp(100.0_realtype*(-1.0_realtype-&
+        sepsensor = sepsensor + exp(sepsensorrho*(-1.0_realtype-&
 &         cos_flow_angle))*blk
 ! dot product with free stream
 !   sensor = -(v(1)*veldirfreestream(1) + v(2)*veldirfreestream(2) + &
