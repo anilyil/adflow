@@ -18,7 +18,7 @@ contains
     use inputphysics, only : liftdirection, dragdirection, surfaceref,&
 &   machcoef, lengthref, alpha, beta, liftindex, cavitationnumber, &
 &   cavitationrho
-    use inputcostfunctions, only : sepsensorrho
+    use inputcostfunctions, only : sepsensorrho, sepsensoroffset
     use inputtsstabderiv, only : tsstability
     use utils_fast_b, only : computetsderivatives
     use flowutils_fast_b, only : getdirvector
@@ -263,7 +263,7 @@ contains
 &     costfuncforceycoefmomentum)*dragdirection(2) + funcvalues(&
 &     costfuncforcezcoefmomentum)*dragdirection(3)
 ! final part of the ks computation for cavitation and separation sensors
-    funcvalues(costfuncsepsensor) = 1.0 + log(funcvalues(&
+    funcvalues(costfuncsepsensor) = sepsensoroffset + log(funcvalues(&
 &     costfuncsepsensor))/sepsensorrho
     funcvalues(costfunccavitation) = cavitationnumber + log(funcvalues(&
 &     costfunccavitation))/cavitationrho
@@ -442,12 +442,15 @@ contains
 ! this is a hack for 2d cases for now, 3d cases will need a better approach here
       xc = fourth*(xx(i, j, 1)+xx(i+1, j, 1)+xx(i, j+1, 1)+xx(i+1, j+1, &
 &       1))
-      if (xc .lt. sepsensorcutoff) then
-! get normalized surface velocity:
+      if (xc .lt. sepsensorcutoff_te .and. xc .gt. sepsensorcutoff_le) &
+&     then
+! get the surface velocity:
         v(1) = ww2(i, j, ivx)
         v(2) = ww2(i, j, ivy)
         v(3) = ww2(i, j, ivz)
-        v = v/(sqrt(v(1)**2+v(2)**2+v(3)**2)+1e-16)
+! todo we used to normalize but now we dont. by doing so, we also capture the change in the magnitude of the velocity as stall ge
+!ts progressively worse.
+! v = v / (sqrt(v(1)**2 + v(2)**2 + v(3)**2) + 1e-16)
 ! get the surface tangent aligned with the free-stream direction:
 ! first, get the dot product of free stream direction and surface normal
         norm_dot_free = veldirfreestream(1)*bcdata(mm)%norm(i, j, 1) + &
@@ -462,6 +465,9 @@ contains
 &         norm(i, j, 2)
         surf_tan(3) = veldirfreestream(3) - norm_dot_free*bcdata(mm)%&
 &         norm(i, j, 3)
+! if ((sqrt(surf_tan(1)**2 + surf_tan(2)**2 + surf_tan(3)**2)) < 1e-10) then
+!  write (*,*) "surf_tan getting very small"
+!  end if
 ! normalize so that computing the cos is easier
         surf_tan = surf_tan/(sqrt(surf_tan(1)**2+surf_tan(2)**2+surf_tan&
 &         (3)**2)+1e-16)
@@ -470,15 +476,24 @@ contains
 ! if its at 0, flow is perfectly aligned.
 ! we dont divide by the magnitude of the two vectors because both of them
 ! should already be normalized.
-        cos_flow_angle = v(1)*surf_tan(1) + v(2)*surf_tan(2) + v(3)*&
-&         surf_tan(3)
+! todo just compute the dot between the velocity and surface tangent. the resulting value is the velocity magnitude parallel to t
+!he surface.
+! we take the sensor as the negative value of this, so positive sensor = separated flow
+! &
+        sensor = -(v(1)*surf_tan(1)+v(2)*surf_tan(2)+v(3)*surf_tan(3))
+!   / ((sqrt(v(1)**2 + v(2)**2 + v(3)**2) + 1e-16) &
+!    * (sqrt(surf_tan(1)**2 + surf_tan(2)**2 + surf_tan(3)**2) + 1e-16))
+        if (sepsensorrho*(sensor-sepsensoroffset) .gt. 200.0_realtype) &
+&         write(*, *) 'sep sensor is approaching overflow. either increa&
+&se sepsensoroffset or reduce sepsensorrho'
 ! we want this number to stay above zero at all times, so we put a ks-max on negative
 ! flow angle and constrain it to be below zero.
 ! in this first implementation, we just assume the absolute min this can be is -1,
 ! but ideally, we should be using the actual min from the flow field. otherwise,
 ! this will underflow for rho values around 300 and above.
-        sepsensor = sepsensor + exp(sepsensorrho*(-1.0_realtype-&
-&         cos_flow_angle))*blk
+! contribute to the sum
+        sepsensor = sepsensor + exp(sepsensorrho*(sensor-sepsensoroffset&
+&         ))*blk
 ! dot product with free stream
 !   sensor = -(v(1)*veldirfreestream(1) + v(2)*veldirfreestream(2) + &
 !   v(3)*veldirfreestream(3))

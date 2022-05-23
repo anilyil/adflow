@@ -10,7 +10,7 @@ contains
     use inputPhysics, only : liftDirection, dragDirection, surfaceRef, &
     machCoef, lengthRef, alpha, beta, liftIndex, cavitationnumber, &
     cavitationrho
-    use inputCostFunctions, only : sepSensorRho
+    use inputCostFunctions, only : sepSensorRho, sepSensorOffset
     use inputTSStabDeriv, only : TSstability
     use utils, only : computeTSDerivatives
     use flowUtils, only : getDirVector
@@ -260,8 +260,8 @@ contains
          funcValues(costFuncForceZCoefMomentum)*dragDirection(3)
 
     ! final part of the KS computation for cavitation and separation sensors
-    funcValues(costFuncSepSensor) = 1.0 &
-         + log(funcValues(costFuncSepSensor)) / sepSensorRho
+    funcValues(costFuncSepSensor) = sepSensorOffset &
+         + (log(funcValues(costFuncSepSensor)) / sepSensorRho)
 
     funcValues(costFuncCavitation) = cavitationnumber &
          + log(funcValues(costFuncCavitation)) / cavitationrho
@@ -486,13 +486,14 @@ contains
        ! this is a hack for 2d cases for now, 3d cases will need a better approach here
        xc = fourth*(xx(i,j,  1) + xx(i+1,j,  1) &
             +         xx(i,j+1,1) + xx(i+1,j+1,1))
-       if (xc < sepSensorCutoff) then
+       if ((xc < sepSensorCutoff_te) .and. (xc > sepSensorCutoff_le) ) then
 
-          ! Get normalized surface velocity:
+          ! Get the surface velocity:
           v(1) = ww2(i, j, ivx)
           v(2) = ww2(i, j, ivy)
           v(3) = ww2(i, j, ivz)
-          v = v / (sqrt(v(1)**2 + v(2)**2 + v(3)**2) + 1e-16)
+          ! TODO we used to normalize but now we dont. by doing so, we also capture the change in the magnitude of the velocity as stall gets progressively worse.
+          ! v = v / (sqrt(v(1)**2 + v(2)**2 + v(3)**2) + 1e-16)
 
           ! get the surface tangent aligned with the free-stream direction:
           ! first, get the dot product of free stream direction and surface normal
@@ -507,6 +508,10 @@ contains
           surf_tan(2) = velDirFreeStream(2) - norm_dot_free * BCData(mm)%norm(i,j,2)
           surf_tan(3) = velDirFreeStream(3) - norm_dot_free * BCData(mm)%norm(i,j,3)
 
+          ! if ((sqrt(surf_tan(1)**2 + surf_tan(2)**2 + surf_tan(3)**2)) < 1e-10) then
+          !  write (*,*) "surf_tan getting very small"
+          !  end if
+
           ! normalize so that computing the cos is easier
           surf_tan = surf_tan / (sqrt(surf_tan(1)**2 + surf_tan(2)**2 + surf_tan(3)**2) + 1e-16)
 
@@ -515,16 +520,23 @@ contains
           ! if its at 0, flow is perfectly aligned.
           ! we dont divide by the magnitude of the two vectors because both of them
           ! should already be normalized.
-          cos_flow_angle = v(1) * surf_tan(1) + v(2) * surf_tan(2) + v(3) * surf_tan(3)
+          ! TODO just compute the dot between the velocity and surface tangent. the resulting value is the velocity magnitude parallel to the surface.
+          ! we take the sensor as the negative value of this, so positive sensor = separated flow
+          sensor = -(v(1) * surf_tan(1) + v(2) * surf_tan(2) + v(3) * surf_tan(3)) ! &
+          !   / ((sqrt(v(1)**2 + v(2)**2 + v(3)**2) + 1e-16) &
+          !    * (sqrt(surf_tan(1)**2 + surf_tan(2)**2 + surf_tan(3)**2) + 1e-16))
+
+          if ((sepSensorRho * (sensor - sepSensorOffset )) .gt. 200.0_realType) then
+               write (*,*) "sep sensor is approaching overflow. either increase sepsensoroffset or reduce sepsensorrho"
+          end if
 
           ! we want this number to stay above zero at all times, so we put a KS-max on negative
           ! flow angle and constrain it to be below zero.
           ! in this first implementation, we just assume the absolute min this can be is -1,
           ! but ideally, we should be using the actual min from the flow field. otherwise,
           ! this will underflow for rho values around 300 and above.
-          sepSensor = sepSensor + exp(sepSensorRho * (- 1.0_realType - cos_flow_angle)) * blk
-
-
+          ! contribute to the sum
+          sepSensor = sepSensor + exp(sepSensorRho * (sensor - sepSensorOffset )) * blk
 
           ! Dot product with free stream
           !   sensor = -(v(1)*velDirFreeStream(1) + v(2)*velDirFreeStream(2) + &

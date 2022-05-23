@@ -2157,7 +2157,8 @@ contains
              v(3) = ww2(i, j, ivz)
 
              ! Normalize
-             v = v / (sqrt(v(1)**2 + v(2)**2 + v(3)**2) + 1e-16)
+             ! TODO dont normalize
+            !  v = v / (sqrt(v(1)**2 + v(2)**2 + v(3)**2) + 1e-16)
 
              ! TODO accessing BCDATA straight up in the math breaks the code somehow?
              norm(1) = BCData(mm)%norm(ii,jj,1)
@@ -2185,10 +2186,10 @@ contains
             ! if its at 0, flow is perfectly aligned.
             ! we dont divide by the magnitude of the two vectors because both of them
             ! should already be normalized.
-            cos_flow_angle = v(1) * surf_tan(1) + v(2) * surf_tan(2) + v(3) * surf_tan(3)
+            sensor = -(v(1) * surf_tan(1) + v(2) * surf_tan(2) + v(3) * surf_tan(3))
 
             ! the new sensor is the negative of the cosine of the angle. 1.0 is separated, -1.0 is attached, 0.0 is right when it separates
-             buffer(nn) = -cos_flow_angle
+             buffer(nn) = sensor
           enddo
        enddo
 

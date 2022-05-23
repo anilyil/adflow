@@ -3489,6 +3489,8 @@ class ADFLOW(AeroSolver):
         else:
             RHS = self.curAP.adflowData.adjointRHS[objective].copy()
 
+        print("RHS NORM ON PROC", self.comm.rank ,numpy.linalg.norm(RHS))
+
         # Check to see if we need to agument the RHS with a structural
         # adjoint:
         if structAdjoint is not None and groupName is not None:
@@ -5094,7 +5096,8 @@ class ADFLOW(AeroSolver):
             # Function parmeters
             "sepSensorOffset": [float, 0.0],
             "sepSensorSharpness": [float, 10.0],
-            "sepSensorCutoff": [float, 0.9],
+            "sepSensorCutoff_te": [float, 0.9],
+            "sepSensorCutoff_le": [float, 0.5],
             "sepSensorRho": [float, 100.0],
             "computeCavitation": [bool, False],
         }
@@ -5472,7 +5475,8 @@ class ADFLOW(AeroSolver):
             # Parameters for functions
             "sepsensoroffset": ["cost", "sepsensoroffset"],
             "sepsensorsharpness": ["cost", "sepsensorsharpness"],
-            "sepsensorcutoff": ["cost", "sepsensorcutoff"],
+            "sepsensorcutoff_te": ["cost", "sepsensorcutoff_te"],
+            "sepsensorcutoff_le": ["cost", "sepsensorcutoff_le"],
             "sepsensorrho": ["cost", "sepsensorrho"],
             "computecavitation": ["cost", "computecavitation"],
             "writesolutioneachiter": ["monitor", "writesoleachiter"],
