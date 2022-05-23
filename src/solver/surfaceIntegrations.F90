@@ -483,6 +483,8 @@ contains
 
        ! only run the separation computation if we are ahead of the separation cutoff.
        ! this is a hack for 2d cases for now, 3d cases will need a better approach here
+       xc = fourth*(xx(i,j,  1) + xx(i+1,j,  1) &
+            +         xx(i,j+1,1) + xx(i+1,j+1,1))
        if (xc < 0.9_realType) then
 
        ! Get normalized surface velocity:
