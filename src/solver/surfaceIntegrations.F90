@@ -10,6 +10,7 @@ contains
     use inputPhysics, only : liftDirection, dragDirection, surfaceRef, &
     machCoef, lengthRef, alpha, beta, liftIndex, cavitationnumber, &
     cavitationrho
+    use inputCostFunctions, only : sepSensorRho
     use inputTSStabDeriv, only : TSstability
     use utils, only : computeTSDerivatives
     use flowUtils, only : getDirVector
@@ -260,7 +261,7 @@ contains
 
     ! final part of the KS computation for cavitation and separation sensors
     funcValues(costFuncSepSensor) = 1.0 &
-         + log(funcValues(costFuncSepSensor)) / 100_realType
+         + log(funcValues(costFuncSepSensor)) / sepSensorRho
 
     funcValues(costFuncCavitation) = cavitationnumber &
          + log(funcValues(costFuncCavitation)) / cavitationrho
@@ -485,70 +486,70 @@ contains
        ! this is a hack for 2d cases for now, 3d cases will need a better approach here
        xc = fourth*(xx(i,j,  1) + xx(i+1,j,  1) &
             +         xx(i,j+1,1) + xx(i+1,j+1,1))
-       if (xc < 0.9_realType) then
+       if (xc < sepSensorCutoff) then
 
-       ! Get normalized surface velocity:
-       v(1) = ww2(i, j, ivx)
-       v(2) = ww2(i, j, ivy)
-       v(3) = ww2(i, j, ivz)
-       v = v / (sqrt(v(1)**2 + v(2)**2 + v(3)**2) + 1e-16)
+          ! Get normalized surface velocity:
+          v(1) = ww2(i, j, ivx)
+          v(2) = ww2(i, j, ivy)
+          v(3) = ww2(i, j, ivz)
+          v = v / (sqrt(v(1)**2 + v(2)**2 + v(3)**2) + 1e-16)
 
-       ! get the surface tangent aligned with the free-stream direction:
-       ! first, get the dot product of free stream direction and surface normal
-       norm_dot_free = velDirFreeStream(1) * BCData(mm)%norm(i,j,1) + &
-                       velDirFreeStream(2) * BCData(mm)%norm(i,j,2) + &
-                       velDirFreeStream(3) * BCData(mm)%norm(i,j,3)
+          ! get the surface tangent aligned with the free-stream direction:
+          ! first, get the dot product of free stream direction and surface normal
+          norm_dot_free = velDirFreeStream(1) * BCData(mm)%norm(i,j,1) + &
+                         velDirFreeStream(2) * BCData(mm)%norm(i,j,2) + &
+                         velDirFreeStream(3) * BCData(mm)%norm(i,j,3)
 
-       ! then using the dot product, subtract the normal component of the free stream direction
-       ! to get the final vector we need, which is the surface tangent
-       ! aligned with the free stream velocity
-       surf_tan(1) = velDirFreeStream(1) - norm_dot_free * BCData(mm)%norm(i,j,1)
-       surf_tan(2) = velDirFreeStream(2) - norm_dot_free * BCData(mm)%norm(i,j,2)
-       surf_tan(3) = velDirFreeStream(3) - norm_dot_free * BCData(mm)%norm(i,j,3)
+          ! then using the dot product, subtract the normal component of the free stream direction
+          ! to get the final vector we need, which is the surface tangent
+          ! aligned with the free stream velocity
+          surf_tan(1) = velDirFreeStream(1) - norm_dot_free * BCData(mm)%norm(i,j,1)
+          surf_tan(2) = velDirFreeStream(2) - norm_dot_free * BCData(mm)%norm(i,j,2)
+          surf_tan(3) = velDirFreeStream(3) - norm_dot_free * BCData(mm)%norm(i,j,3)
 
-       ! normalize so that computing the cos is easier
-       surf_tan = surf_tan / (sqrt(surf_tan(1)**2 + surf_tan(2)**2 + surf_tan(3)**2) + 1e-16)
+          ! normalize so that computing the cos is easier
+          surf_tan = surf_tan / (sqrt(surf_tan(1)**2 + surf_tan(2)**2 + surf_tan(3)**2) + 1e-16)
 
-       ! get the cosine of the angle between the first-cell velocity with the surface tangent
-       ! when this angle hits +- 90 degrees, we say the cell is separated,
-       ! if its at 0, flow is perfectly aligned.
-       ! we dont divide by the magnitude of the two vectors because both of them
-       ! should already be normalized.
-       cos_flow_angle = v(1) * surf_tan(1) + v(2) * surf_tan(2) + v(3) * surf_tan(3)
+          ! get the cosine of the angle between the first-cell velocity with the surface tangent
+          ! when this angle hits +- 90 degrees, we say the cell is separated,
+          ! if its at 0, flow is perfectly aligned.
+          ! we dont divide by the magnitude of the two vectors because both of them
+          ! should already be normalized.
+          cos_flow_angle = v(1) * surf_tan(1) + v(2) * surf_tan(2) + v(3) * surf_tan(3)
 
-       ! we want this number to stay above zero at all times, so we put a KS-max on negative
-       ! flow angle and constrain it to be below zero.
-       ! in this first implementation, we just assume the absolute min this can be is -1,
-       ! but ideally, we should be using the actual min from the flow field. otherwise,
-       ! this will underflow for rho values around 300 and above.
-       sepSensor = sepSensor + exp(100.0_realType * (- 1.0_realType - cos_flow_angle)) * blk
+          ! we want this number to stay above zero at all times, so we put a KS-max on negative
+          ! flow angle and constrain it to be below zero.
+          ! in this first implementation, we just assume the absolute min this can be is -1,
+          ! but ideally, we should be using the actual min from the flow field. otherwise,
+          ! this will underflow for rho values around 300 and above.
+          sepSensor = sepSensor + exp(sepSensorRho * (- 1.0_realType - cos_flow_angle)) * blk
 
 
 
-       ! Dot product with free stream
-     !   sensor = -(v(1)*velDirFreeStream(1) + v(2)*velDirFreeStream(2) + &
-          !   v(3)*velDirFreeStream(3))
+          ! Dot product with free stream
+          !   sensor = -(v(1)*velDirFreeStream(1) + v(2)*velDirFreeStream(2) + &
+               !   v(3)*velDirFreeStream(3))
 
-       !Now run through a smooth heaviside function:
-     !   sensor = one/(one + exp(-2*sepSensorSharpness*(sensor-sepSensorOffset)))
+          !Now run through a smooth heaviside function:
+          !   sensor = one/(one + exp(-2*sepSensorSharpness*(sensor-sepSensorOffset)))
 
-       ! And integrate over the area of this cell and save, blanking as we go.
-     !   sensor = sensor * cellArea * blk
-     !   sepSensor = sepSensor + sensor
+          ! And integrate over the area of this cell and save, blanking as we go.
+          !   sensor = sensor * cellArea * blk
+          !   sepSensor = sepSensor + sensor
 
-       ! Also accumulate into the sepSensorAvg
-     !   xc = fourth*(xx(i,j,  1) + xx(i+1,j,  1) &
-     !        +         xx(i,j+1,1) + xx(i+1,j+1,1))
-     !   yc = fourth*(xx(i,j,  2) + xx(i+1,j,  2) &
-     !        +         xx(i,j+1,2) + xx(i+1,j+1,2))
-     !   zc = fourth*(xx(i,j,  3) + xx(i+1,j,  3) &
-     !        +         xx(i,j+1,3) + xx(i+1,j+1,3))
+          ! Also accumulate into the sepSensorAvg
+          !   xc = fourth*(xx(i,j,  1) + xx(i+1,j,  1) &
+          !        +         xx(i,j+1,1) + xx(i+1,j+1,1))
+          !   yc = fourth*(xx(i,j,  2) + xx(i+1,j,  2) &
+          !        +         xx(i,j+1,2) + xx(i+1,j+1,2))
+          !   zc = fourth*(xx(i,j,  3) + xx(i+1,j,  3) &
+          !        +         xx(i,j+1,3) + xx(i+1,j+1,3))
 
-       ! TODO what to do with the sep sensor average variable?
-       ! looks like its giving the average location of the separation, not sure how useful though...
-     !   sepSensorAvg(1) = sepSensorAvg(1)  + sensor * xc
-     !   sepSensorAvg(2) = sepSensorAvg(2)  + sensor * yc
-     !   sepSensorAvg(3) = sepSensorAvg(3)  + sensor * zc
+          ! TODO what to do with the sep sensor average variable?
+          ! looks like its giving the average location of the separation, not sure how useful though...
+          !   sepSensorAvg(1) = sepSensorAvg(1)  + sensor * xc
+          !   sepSensorAvg(2) = sepSensorAvg(2)  + sensor * yc
+          !   sepSensorAvg(3) = sepSensorAvg(3)  + sensor * zc
        end if
 
        if (computeCavitation) then

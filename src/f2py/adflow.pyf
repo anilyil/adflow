@@ -69,13 +69,13 @@ python module libadflow
            integer(kind=inttype), intent(in) :: nvar
            character, dimension(nvar,32), intent(out):: monitor_variables
          end subroutine getmonitorvariablenames
-       
+
          subroutine getsolvertypearray(niter, nsps, type_array)
-           integer(kind=inttype), intent(in) :: niter, nsps, 
+           integer(kind=inttype), intent(in) :: niter, nsps,
            character, dimension(0:niter,nsps,8), intent(out):: type_array
          end subroutine getsolvertypearray
-       
-         
+
+
        end module utils
 
        module walldistance
@@ -1386,6 +1386,8 @@ python module libadflow
          use constants
          real(kind=realtype) sepsensoroffset
          real(kind=realtype) sepsensorsharpness
+         real(kind=realtype) sepsensorcutoff
+         real(kind=realtype) sepsensorrho
          logical::computecavitation
        end module inputcostfunctions
 

@@ -292,6 +292,8 @@ module inputCostFunctions
   use constants
   real(kind=realtype) :: sepSensorOffset= zero
   real(kind=realtype) ::sepSensorSharpness=10.0_realType
+  real(kind=realtype) ::sepSensorCutoff=0.9_realType
+  real(kind=realtype) ::sepSensorRho=100.0_realType
   logical :: computeCavitation
 
 end module inputCostFunctions
