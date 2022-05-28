@@ -417,7 +417,12 @@ class ADflowSolver(ImplicitComponent):
             if "adflow_states" in d_residuals:
                 xDvDot = {}
                 for var_name in d_inputs:
-                    xDvDot[var_name] = d_inputs[var_name]
+                    # TODO fix here
+                    xDvDot[{
+                        "Ps": "pressure_fan_face",
+                        "Ptot": "pressurestagnation_fan_exit",
+                        "Ttot": "temperaturestagnation_fan_exit",
+                    }[var_name]] = d_inputs[var_name]
                 if "adflow_vol_coords" in d_inputs:
                     xVDot = d_inputs["adflow_vol_coords"]
                 else:
@@ -427,9 +432,12 @@ class ADflowSolver(ImplicitComponent):
                 else:
                     wDot = None
 
+                # print(f"[{self.comm.rank}] applying linear in mphys adflow solver with", xDvDot)
+
                 dwdot = solver.computeJacobianVectorProductFwd(
                     xDvDot=xDvDot, xVDot=xVDot, wDot=wDot, residualDeriv=True
                 )
+                # print(f"[{self.comm.rank}] residual derivative seed", np.linalg.norm(dwdot))
                 d_residuals["adflow_states"] += dwdot
 
         elif mode == "rev":
@@ -471,9 +479,10 @@ class ADflowSolver(ImplicitComponent):
         if not solver.adjointSetup:
             solver._setupAdjoint()
 
-        if self.comm.rank == 0:
-            print("Solving linear in mphys_adflow", flush=True)
+        # if self.comm.rank == 0:
+            # print("Solving linear in mphys_adflow", flush=True)
         if mode == "fwd":
+            # print(f"[{self.comm.rank}] RHS norm:", np.linalg.norm(d_residuals["adflow_states"]))
             d_outputs["adflow_states"] = solver.solveDirectForRHS(d_residuals["adflow_states"])
         elif mode == "rev":
             # d_residuals['adflow_states'] = solver.solveAdjointForRHS(d_outputs['adflow_states'])
@@ -960,7 +969,9 @@ class ADflowFunctions(ExplicitComponent):
             else:
                 xVDot = None
 
-            funcsdot = solver.computeJacobianVectorProductFwd(xDvDot=xDvDot, xVDot=xVDot, wDot=wDot, funcDeriv=True)
+            funcsdot = solver.computeJacobianVectorProductFwd(xDvDot=xDvDot, xVDot=xVDot, wDot=wDot, funcDeriv=True, evalFuncs=self.extra_funcs)
+
+            # print(f"[{self.comm.rank}] funcs derivative seed", funcsdot)
 
             for name in funcsdot:
                 func_name = name.lower()
