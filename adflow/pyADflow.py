@@ -3674,7 +3674,7 @@ class ADFLOW(AeroSolver):
             Solution vector of size w
         """
         if relTol is None:
-            relTol = self.getOption("adjointl2convergence")
+            relTol = self.getOption("adjointl2convergencerel")
         outVec = self.adflow.adjointapi.solvedirectforrhs(inVec, relTol)
 
         return outVec
@@ -3870,6 +3870,7 @@ class ADFLOW(AeroSolver):
         groupName=None,
         mode="AD",
         h=None,
+        evalFuncs=None,
     ):
         """This the main python gateway for producing forward mode jacobian
         vector products. It is not generally called by the user by
@@ -3987,19 +3988,29 @@ class ADFLOW(AeroSolver):
         costSize = self.adflow.constants.ncostfunction
         fSize, nCell = self._getSurfaceSize(self.allWallsGroup, includeZipper=True)
 
+        # process the functions and groups
+        if evalFuncs is None:
+            evalFuncs = sorted(self.curAP.evalFuncs)
+
+        # Make sure we have a list that has only lower-cased entries
+        tmp = []
+        for f in evalFuncs:
+            tmp.append(f.lower())
+        evalFuncs = tmp
+
         # Generate the list of families we need for the functions in curAP
-        groupNames = set()
-        for f in self.curAP.evalFuncs:
+        groupNames = []
+        for f in evalFuncs:
             fl = f.lower()
             if fl in self.adflowCostFunctions:
                 groupName = self.adflowCostFunctions[fl][0]
-                groupNames.add(groupName)
+                groupNames.append(groupName)
             if f in self.adflowUserCostFunctions:
                 for sf in self.adflowUserCostFunctions[f].functions:
                     groupName = self.adflowCostFunctions[sf.lower()][0]
-                    groupNames.add(groupName)
+                    groupNames.append(groupName)
 
-        groupNames = list(groupNames)
+        # groupNames = list(groupNames)
         if len(groupNames) == 0:
             famLists = self._expandGroupNames([self.allWallsGroup])
         else:
@@ -4076,7 +4087,7 @@ class ADFLOW(AeroSolver):
 
         # Process the derivative of the functions
         funcsDot = {}
-        for f in self.curAP.evalFuncs:
+        for f in evalFuncs:
             fl = f.lower()
             if fl in self.adflowCostFunctions:
                 groupName = self.adflowCostFunctions[fl][0]
