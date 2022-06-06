@@ -229,6 +229,10 @@ class ADflowSolver(ImplicitComponent):
 
         # self.declare_partials(of='adflow_states', wrt='*')
 
+        # TODO once caching is available from openmdao, these will be removed
+        self.cached_sols = [None, None, None]
+        self.cache_counter = 0
+
     def _set_ap(self, inputs, print_dict=True):
         tmp = {}
         for (args, _kwargs) in self.ap_vars:
@@ -415,14 +419,20 @@ class ADflowSolver(ImplicitComponent):
 
         if mode == "fwd":
             if "adflow_states" in d_residuals:
+                # TODO figure out the keys in xDvDot
+                # this needs to be extended to different types of DVs
                 xDvDot = {}
-                for var_name in d_inputs:
-                    # TODO fix here
-                    xDvDot[{
-                        "Ps": "pressure_fan_face",
-                        "Ptot": "pressurestagnation_fan_exit",
-                        "Ttot": "temperaturestagnation_fan_exit",
-                    }[var_name]] = d_inputs[var_name]
+                for dv_name in d_inputs:
+                    # check if this key is in AP DVs
+                    if dv_name in ap.DVs:
+                        # this could be the full name with the family or the assigned custom name
+                        fam = ap.DVs[dv_name].family
+                        key = ap.DVs[dv_name].key
+
+                        adflow_name = f"{key}_{fam}"
+
+                        xDvDot[adflow_name] = d_inputs[dv_name]
+
                 if "adflow_vol_coords" in d_inputs:
                     xVDot = d_inputs["adflow_vol_coords"]
                 else:
@@ -482,8 +492,34 @@ class ADflowSolver(ImplicitComponent):
         # if self.comm.rank == 0:
             # print("Solving linear in mphys_adflow", flush=True)
         if mode == "fwd":
-            # print(f"[{self.comm.rank}] RHS norm:", np.linalg.norm(d_residuals["adflow_states"]))
-            d_outputs["adflow_states"] = solver.solveDirectForRHS(d_residuals["adflow_states"])
+
+            # TODO once caching is available from the openmdao side, remove these caching calls and just use d_outputs vector as is
+
+            # check if we have a cached solution, if not, we start with zero
+            if self.cached_sols[self.cache_counter] is None:
+                if self.comm.rank == 0:
+                    print(f"RESETTING LINEAR SOLVER CACHE: {self.cache_counter}")
+                self.cached_sols[self.cache_counter] = np.zeros_like(d_residuals["adflow_states"])
+
+            # load the cached solution
+            phi = self.cached_sols[self.cache_counter].copy()
+
+            if self.comm.rank == 0:
+                print(f"Current cache counter: {self.cache_counter}")
+
+            # run the ADflow direct solver with the initial guess = our cached solution
+            solver.solveDirectForRHS(d_residuals["adflow_states"], phi)  # , absTol=self.abs_direct_tols[self.cache_counter])
+
+            d_outputs["adflow_states"] = phi
+
+            # cache the solution
+            self.cached_sols[self.cache_counter] = phi.copy()
+
+            # increment counter. we have 3 solutions for now
+            self.cache_counter = (self.cache_counter + 1) % 3
+            if self.comm.rank == 0:
+                print(f"New cache counter: {self.cache_counter}")
+
         elif mode == "rev":
             # d_residuals['adflow_states'] = solver.solveAdjointForRHS(d_outputs['adflow_states'])
             solver.adflow.adjointapi.solveadjoint(d_outputs["adflow_states"], d_residuals["adflow_states"], True)
@@ -954,10 +990,23 @@ class ADflowFunctions(ExplicitComponent):
 
         if mode == "fwd":
             xDvDot = {}
-            for key in ap.DVs:
-                if key in d_inputs:
-                    mach_name = key.split("_")[0]
-                    xDvDot[mach_name] = d_inputs[key]
+
+            # TODO this needs to be fixed for all DV names in the AP. could be generic stuff like alpha, or a BC variable on a family
+            # for key in ap.DVs:
+            #     if key in d_inputs:
+            #         mach_name = key.split("_")[0]
+            #         xDvDot[mach_name] = d_inputs[key]
+
+            for dv_name in d_inputs:
+                # check if this key is in AP DVs
+                if dv_name in ap.DVs:
+                    # this could be the full name with the family or the assigned custom name
+                    fam = ap.DVs[dv_name].family
+                    key = ap.DVs[dv_name].key
+
+                    adflow_name = f"{key}_{fam}"
+
+                    xDvDot[adflow_name] = d_inputs[dv_name]
 
             if "adflow_states" in d_inputs:
                 wDot = d_inputs["adflow_states"]
