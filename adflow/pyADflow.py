@@ -3659,7 +3659,7 @@ class ADFLOW(AeroSolver):
 
         return outVec
 
-    def solveDirectForRHS(self, inVec, relTol=None):
+    def solveDirectForRHS(self, rhs, phi, relTol=None, absTol=None):
         """
         Solve the direct system with an arbitary RHS vector.
 
@@ -3674,10 +3674,10 @@ class ADFLOW(AeroSolver):
             Solution vector of size w
         """
         if relTol is None:
-            relTol = self.getOption("adjointl2convergencerel")
-        outVec = self.adflow.adjointapi.solvedirectforrhs(inVec, relTol)
-
-        return outVec
+            relTol = self.getOption("adjointL2ConvergenceRel")
+        if absTol is None:
+            absTol = self.getOption("adjointL2Convergence")
+        self.adflow.adjointapi.solvedirectforrhs(rhs, phi, relTol, absTol)
 
     def saveAdjointMatrix(self, baseFileName):
         """Save the adjoint matrix to a binary petsc file for

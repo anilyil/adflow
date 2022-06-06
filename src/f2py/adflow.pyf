@@ -69,13 +69,13 @@ python module libadflow
            integer(kind=inttype), intent(in) :: nvar
            character, dimension(nvar,32), intent(out):: monitor_variables
          end subroutine getmonitorvariablenames
-       
+
          subroutine getsolvertypearray(niter, nsps, type_array)
-           integer(kind=inttype), intent(in) :: niter, nsps, 
+           integer(kind=inttype), intent(in) :: niter, nsps,
            character, dimension(0:niter,nsps,8), intent(out):: type_array
          end subroutine getsolvertypearray
-       
-         
+
+
        end module utils
 
        module walldistance
@@ -613,11 +613,12 @@ python module libadflow
            integer(kind=inttype), optional,intent(in),check(len(invec)>=ndof),depend(invec) :: ndof=len(invec)
            real(kind=realtype) intent(in) :: relativetolerance
          end subroutine solveadjointforrhs
-         subroutine solvedirectforrhs(invec,outvec,ndof,relativetolerance) ! in :test:matrixFreeRoutines.F90
-           real(kind=realtype) dimension(ndof),intent(in) :: invec
-           real(kind=realtype) dimension(ndof),intent(out),depend(ndof) :: outvec
-           integer(kind=inttype), optional,intent(in),check(len(invec)>=ndof),depend(invec) :: ndof=len(invec)
+         subroutine solvedirectforrhs(rhs,phi,ndof,relativetolerance, absolutetolerance) ! in :test:matrixFreeRoutines.F90
+           real(kind=realtype) dimension(ndof) :: rhs
+           real(kind=realtype) dimension(ndof),depend(ndof) :: phi
+           integer(kind=inttype), optional,intent(in),check(len(rhs)>=ndof),depend(rhs) :: ndof=len(rhs)
            real(kind=realtype) intent(in) :: relativetolerance
+           real(kind=realtype) intent(in) :: absolutetolerance
          end subroutine solvedirectforrhs
 
          subroutine saveadjointmatrix(filename)
