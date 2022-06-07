@@ -1,5 +1,6 @@
 import numpy as np
 from pprint import pprint as pp
+import time
 
 from adflow import ADFLOW
 from idwarp import USMesh
@@ -300,7 +301,13 @@ class ADflowSolver(ImplicitComponent):
             ap.fatalFail = False
 
             # do not write solution files inside the solver loop
+            self.comm.barrier()
+            if self.comm.rank == 0:
+                print(f"SCHUR SOLVER time before CFD nonlinear solve: {time.time():.3f}", flush=True)
             solver(ap, writeSolution=False)
+            self.comm.barrier()
+            if self.comm.rank == 0:
+                print(f"SCHUR SOLVER time after  CFD nonlinear solve: {time.time():.3f}", flush=True)
 
             if ap.fatalFail:
                 if self.comm.rank == 0:
@@ -508,7 +515,13 @@ class ADflowSolver(ImplicitComponent):
                 print(f"Current cache counter: {self.cache_counter}")
 
             # run the ADflow direct solver with the initial guess = our cached solution
+            self.comm.barrier()
+            if self.comm.rank == 0:
+                print(f"SCHUR SOLVER time before CFD linear solve: {time.time():.3f}", flush=True)
             solver.solveDirectForRHS(d_residuals["adflow_states"], phi)  # , absTol=self.abs_direct_tols[self.cache_counter])
+            self.comm.barrier()
+            if self.comm.rank == 0:
+                print(f"SCHUR SOLVER time after  CFD linear solve: {time.time():.3f}", flush=True)
 
             d_outputs["adflow_states"] = phi
 

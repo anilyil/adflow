@@ -471,6 +471,9 @@ contains
     ! Solve (this is the transpose solve of a transpose matrix, so it's direct)
    !  call KSPSolveTranspose(adjointKSP, psi_like1, psi_like2, ierr)
     ! Solve the update (psi_like2)
+    ! keep time at each iteration
+    call cpu_time(direct_solve_start)
+
     call KSPSolveTranspose(adjointKSP, adjointRes, psi_like2, ierr)
     call EChk(ierr, __FILE__, __LINE__)
 

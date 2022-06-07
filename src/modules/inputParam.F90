@@ -794,6 +794,8 @@ module inputADjoint
   real(kind=alwaysRealType)    :: adjRelTolRel
   real(kind=alwaysRealType)    :: adjDivTol
   real(kind=realType) :: adjMaxL2Dev
+  ! TODO remove this once we are done with the schur solver timing business
+  real(kind=realType) :: direct_solve_start = 0.0_realType
   integer(kind=intType)  :: adjMaxIter
   integer(kind=intType)  :: adjRestart
   integer(kind=intType)  :: adjMonStep
