@@ -451,11 +451,14 @@ class ADflowSolver(ImplicitComponent):
 
                 # print(f"[{self.comm.rank}] applying linear in mphys adflow solver with", xDvDot)
 
-                dwdot = solver.computeJacobianVectorProductFwd(
-                    xDvDot=xDvDot, xVDot=xVDot, wDot=wDot, residualDeriv=True
-                )
-                # print(f"[{self.comm.rank}] residual derivative seed", np.linalg.norm(dwdot))
-                d_residuals["adflow_states"] += dwdot
+                if xDvDot or (xVDot is not None) or (wDot is not None):
+                    # print("Applying linear in adflow solver with", xDvDot, xVDot, wDot)
+                    dwdot = solver.computeJacobianVectorProductFwd(
+                        xDvDot=xDvDot, xVDot=xVDot, wDot=wDot, residualDeriv=True
+                    )
+                    # print("done applying linear in adflow")
+                    # print(f"[{self.comm.rank}] residual derivative seed", np.linalg.norm(dwdot))
+                    d_residuals["adflow_states"] += dwdot
 
         elif mode == "rev":
             if "adflow_states" in d_residuals:
@@ -1031,14 +1034,17 @@ class ADflowFunctions(ExplicitComponent):
             else:
                 xVDot = None
 
-            funcsdot = solver.computeJacobianVectorProductFwd(xDvDot=xDvDot, xVDot=xVDot, wDot=wDot, funcDeriv=True, evalFuncs=self.extra_funcs)
+            if xDvDot or (xVDot is not None) or (wDot is not None):
+                # print("Applying jacvecproduct in adflow funcswith", xDvDot, xVDot, wDot)
+                funcsdot = solver.computeJacobianVectorProductFwd(xDvDot=xDvDot, xVDot=xVDot, wDot=wDot, funcDeriv=True, evalFuncs=self.extra_funcs)
+                # print("done Applying jacvecproduct in adflow funcs")
 
-            # print(f"[{self.comm.rank}] funcs derivative seed", funcsdot)
+                # print(f"[{self.comm.rank}] funcs derivative seed", funcsdot)
 
-            for name in funcsdot:
-                func_name = name.lower()
-                if name in d_outputs:
-                    d_outputs[name] += funcsdot[func_name]
+                for name in funcsdot:
+                    func_name = name.lower()
+                    if name in d_outputs:
+                        d_outputs[name] += funcsdot[func_name]
 
         elif mode == "rev":
             funcsBar = {}
