@@ -228,6 +228,10 @@ class ADflowSolver(ImplicitComponent):
         self.add_input("adflow_vol_coords", distributed=True, shape_by_conn=True, tags=["mphys_coupling"])
         self.add_output("adflow_states", distributed=True, shape=local_state_size, tags=["mphys_coupling"])
 
+        # TODO temporary changes for the schur paper
+        self.first_call = True
+        self.l2rel_save = solver.getOption("L2ConvergenceRel")
+
         # self.declare_partials(of='adflow_states', wrt='*')
 
         # TODO once caching is available from openmdao, these will be removed
@@ -290,6 +294,15 @@ class ADflowSolver(ImplicitComponent):
     def solve_nonlinear(self, inputs, outputs):
         solver = self.solver
         ap = self.ap
+
+        # adjust the relative L2 convergence
+        if self.first_call:
+            # first call gets 1e-4 always
+            solver.setOption("L2ConvergenceRel", 1e-4)
+            self.first_call = False
+        else:
+            solver.setOption("L2ConvergenceRel", self.l2rel_save)
+
         if self._do_solve:
 
             # Set the warped mesh
