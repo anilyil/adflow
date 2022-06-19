@@ -3890,7 +3890,7 @@ contains
 #ifndef USE_COMPLEX
     ! in the real mode, we set the atol slightly lower than the target L2 convergence
     ! the reasoning for this is detailed in the NKStep subroutine
-    atol = totalR0*L2Conv*0.5_realType
+    atol = totalR0*L2Conv*0.1_realType
 #else
     ! in complex mode, we want to tightly solve the linear system every time
     ! again, see the NKStep subroutine for the explanation
@@ -3898,7 +3898,7 @@ contains
 #endif
 
     ! however, exit early if we are reaching the relative l2 convergence
-    atol = max(atol, totalRStart*L2ConvRel*0.5_realType)
+    atol = max(atol, totalRStart*L2ConvRel*0.8_realType)
     !  write (*,*) "atol, rtol", atol, rtol, totalRStart, L2ConvRel
 
     ! Set the iteration limit to maxIt, determined by which fluxes are used.
