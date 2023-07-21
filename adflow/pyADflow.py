@@ -317,6 +317,11 @@ class ADFLOW(AeroSolver):
             # as well as which blocks in the cgns mesh to include in the search
             self.blankingSurfDict = explicitSurfaceCallback(self.CGNSZoneNameIDs)
 
+            # also keep track of a second dictionary that saves the surface info. We do this
+            # separately because the surface files can be shared across different blanking calls.
+            # in this case, we dont want to process the surfaces multiple times.
+            self.blankingSurfData = {}
+
             # loop over the surfaces
             for surf in self.blankingSurfDict:
                 if self.comm.rank == 0:
@@ -348,8 +353,8 @@ class ADFLOW(AeroSolver):
                 # we will add the points to the potential DVGeo and re-use the conn info
                 # during hole cutting update
                 if self.getOption("oversetUpdateMode") == "full":
-                    self.blankingSurfDict[surf]["pts"] = pts
-                    self.blankingSurfDict[surf]["conn"] = conn
+                    if surfFile not in self.blankingSurfData:
+                        self.blankingSurfData[surfFile] = {"pts": pts, "conn": conn}
 
                 # get a new flag array
                 surfFlag = numpy.zeros(n, "intc")
@@ -362,8 +367,6 @@ class ADFLOW(AeroSolver):
                 flag = numpy.any([flag, surfFlag], axis=0)
 
         explicitSurfaceCutTime = time.time()
-
-        self.explicit_surf_flag = flag.copy()
 
         # Need to reset the oversetPriority option since the CGNSGrid
         # structure wasn't available before;
@@ -380,7 +383,6 @@ class ADFLOW(AeroSolver):
 
         famList = self._getFamilyList(self.closedFamilyGroup)
         self.adflow.preprocessingapi.preprocessingoverset(flag, famList)
-        print("first preprocess done")
 
         oversetPreTime = time.time()
 
@@ -3383,10 +3385,11 @@ class ADFLOW(AeroSolver):
                     # this saves duplicate pointsets where the same file might be
                     # used in the explicit hole cutting multiple times in different
                     # configurations.
-                    surfPtSetName = f"points_{self.blankingSurfDict[surf]['surfFile']}"
+                    surfFile = self.blankingSurfDict[surf]['surfFile']
+                    surfPtSetName = f"points_{surfFile}"
                     if surfPtSetName not in self.DVGeo.points:
                         # we need to add the pointset to dvgeo. do it in parallel
-                        surfPts = self.blankingSurfDict[surf]["pts"]
+                        surfPts = self.blankingSurfData[surfFile]["pts"]
                         npts = surfPts.shape[0]
 
                         # compute proc displacements
@@ -3398,8 +3401,8 @@ class ADFLOW(AeroSolver):
                         disp[1:] = numpy.cumsum(sizes)
 
                         # save this info in the dict
-                        self.blankingSurfDict[surf]["sizes"] = sizes
-                        self.blankingSurfDict[surf]["disp"] = disp
+                        self.blankingSurfData[surfFile]["sizes"] = sizes
+                        self.blankingSurfData[surfFile]["disp"] = disp
 
                         # we already communicated the points when loading the file,
                         # so just add them to dvgeo now
@@ -3460,13 +3463,14 @@ class ADFLOW(AeroSolver):
                 # also update the blanking surface coordinates
                 if self.getOption("oversetUpdateMode") == "full" and self.getOption("explicitSurfaceCallback") is not None:
                     # loop over each surf and update points
-                    for surf in self.blankingSurfDict:
-                        surfPtSetName = f"points_{self.blankingSurfDict[surf]['surfFile']}"
-                        sizes = self.blankingSurfDict[surf]["sizes"]
-                        disp = self.blankingSurfDict[surf]["disp"]
-                        nptsg = self.blankingSurfDict[surf]["pts"].shape[0]
+                    for surfFile in self.blankingSurfData:
+                        surfPtSetName = f"points_{surfFile}"
+                        sizes = self.blankingSurfData[surfFile]["sizes"]
+                        disp = self.blankingSurfData[surfFile]["disp"]
+                        nptsg = self.blankingSurfData[surfFile]["pts"].shape[0]
 
                         # get the updated local points
+                        print("updating surf ptset", surfPtSetName)
                         newPtsLocal = self.DVGeo.update(surfPtSetName, config=aeroProblem.name)
 
                         # we need to gather all points on all procs. use the vectorized allgatherv for this
@@ -3477,13 +3481,14 @@ class ADFLOW(AeroSolver):
 
                         # recvbuf
                         newPtsGlobal = numpy.zeros(nptsg * 3, dtype=self.dtype)
-                        recvbuf = [newPtsGlobal, sizes * 3, disp[1:] * 3, MPI.DOUBLE]
+                        recvbuf = [newPtsGlobal, sizes * 3, disp[0:-1] * 3, MPI.DOUBLE]
 
                         # do an allgatherv
+                        print("allgatherv", surfPtSetName)
                         self.comm.Allgatherv(sendbuf, recvbuf)
 
                         # reshape into a nptsg,3 array
-                        self.blankingSurfDict[surf]["pts"] = newPtsGlobal.reshape((nptsg, 3))
+                        self.blankingSurfData[surfFile]["pts"] = newPtsGlobal.reshape((nptsg, 3))
 
         self._setAeroProblemData(aeroProblem)
 
@@ -4468,8 +4473,9 @@ class ADFLOW(AeroSolver):
                                 kMin = -1
 
                             # load the updated surface
-                            pts = self.blankingSurfDict[surf]["pts"]
-                            conn = self.blankingSurfDict[surf]["conn"]
+                            surfFile = self.blankingSurfDict[surf]["surfFile"]
+                            pts = self.blankingSurfData[surfFile]["pts"]
+                            conn = self.blankingSurfData[surfFile]["conn"]
 
                             # get a new flag array
                             surfFlag = numpy.zeros(n, "intc")
