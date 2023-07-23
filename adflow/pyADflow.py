@@ -5791,6 +5791,7 @@ class ADFLOW(AeroSolver):
             "useOversetWallScaling": [bool, False],
             "selfZipCutoff": [float, 120.0],
             "oversetPriority": [dict, {}],
+            "recomputeOverlapMatrix": [bool, False],
             "oversetDebugPrint": [bool, False],
             # Unsteady Parameters
             "timeIntegrationScheme": [str, ["BDF", "explicit RK", "implicit RK"]],
@@ -6169,6 +6170,7 @@ class ADFLOW(AeroSolver):
             "usezippermesh": ["overset", "usezippermesh"],
             "useoversetwallscaling": ["overset", "useoversetwallscaling"],
             "selfzipcutoff": ["overset", "selfzipcutoff"],
+            "recomputeoverlapmatrix": ["overset", "recomputeoverlapmatrix"],
             "oversetdebugprint": ["overset", "oversetdebugprint"],
             # Unsteady Params
             "timeintegrationscheme": {
