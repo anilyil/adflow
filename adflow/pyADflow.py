@@ -5732,6 +5732,7 @@ class ADFLOW(AeroSolver):
             "eddyVisInfRatio": [float, 0.009],
             "useWallFunctions": [bool, False],
             "useApproxWallDistance": [bool, True],
+            "updateWallAssociations": [bool, False],
             "eulerWallTreatment": [
                 str,
                 [
@@ -5966,6 +5967,7 @@ class ADFLOW(AeroSolver):
             "equationmode",
             "flowtype",
             "useapproxwalldistance",
+            "updatewallassociations",
             "liftindex",
             "mgcycle",
             "mgstartlevel",
@@ -6107,6 +6109,7 @@ class ADFLOW(AeroSolver):
             "usewallfunctions": ["physics", "wallfunctions"],
             "walldistcutoff": ["physics", "walldistcutoff"],
             "useapproxwalldistance": ["discr", "useapproxwalldistance"],
+            "updatewallassociations": ["discr", "updatewallassociations"],
             "eulerwalltreatment": {
                 "linear pressure extrapolation": self.adflow.constants.linextrapolpressure,
                 "constant pressure extrapolation": self.adflow.constants.constantpressure,
