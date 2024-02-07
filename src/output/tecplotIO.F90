@@ -2089,10 +2089,10 @@ contains
             ! get the normal contribution to the plane
             pF_normal = (pF_elem(1) * lslc%normal(1) + &
                          pF_elem(2) * lslc%normal(2) + &
-                         pF_elem(3) * lslc%normal(3)) * pF_elem
+                         pF_elem(3) * lslc%normal(3)) * lslc%normal
             vF_normal = (vF_elem(1) * lslc%normal(1) + &
                          vF_elem(2) * lslc%normal(2) + &
-                         vF_elem(3) * lslc%normal(3)) * vF_elem
+                         vF_elem(3) * lslc%normal(3)) * lslc%normal
 
             ! remove the normal contribution from the vector. This is the vector projected
             ! onto the slicing plane
