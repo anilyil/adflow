@@ -272,3 +272,13 @@ ap_multi_bc = AeroProblem(
         "mavgvi_inflow2",
     ],
 )
+
+ap_naca0012_separation = AeroProblem(
+    name="0012separation",
+    alpha=20.0,
+    mach=0.35,
+    altitude=3048,
+    areaRef=1.0,
+    chordRef=1.0,
+    evalFuncs=["sepsensor_wingup", "sepsensorks_wingup", "sepsensorksarea_wingup"],
+)
