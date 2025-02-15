@@ -20,7 +20,6 @@ v. 1.0  - Original pyAero Framework Implementation (RP,SM 2008)
 
 import copy
 import hashlib
-
 # =============================================================================
 # Imports
 # =============================================================================
@@ -3077,6 +3076,35 @@ class ADFLOW(AeroSolver):
 
             f.close()
         # end if (root proc )
+
+    def writeFamilySolution(self, familyName, outputDir=None, baseName=None, number=None):
+        if outputDir is None:
+            outputDir = self.getOption("outputDirectory")
+
+        if baseName is None:
+            baseName = self.curAP.name
+
+        if not familyName.lower() in self.families:
+            raise Error(f"Family {familyName} not found in the solver.")
+
+        famList = self._getFamilyList(familyName)
+        numDigits = self.getOption("writeSolutionDigits")
+        famID = self.families[familyName.lower()][0]
+        isBC = True if famID in self._getFamilyList("allSurfaces") else False
+
+        if number is not None:
+            baseName = f"{baseName}_{familyName.lower()}_{number:0{numDigits}d}"
+        else:
+            if self.getOption("numberSolutions"):
+                baseName = f"{baseName}_{familyName.lower()}_{self.curAP.adflowData.callCounter:0{numDigits}d}"
+
+        fileName = os.path.join(outputDir, baseName)
+        fileName += ".dat"
+
+        if isBC:
+            self.adflow.tecplotio.writebcsurfacesascii(fileName, famList)
+        else:
+            self.adflow.tecplotio.writeuserintsurf(familyName, fileName, famID)
 
     def resetAdjoint(self, obj):
         """
