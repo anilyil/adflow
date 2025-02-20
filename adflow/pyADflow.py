@@ -2384,6 +2384,405 @@ class ADFLOW(AeroSolver):
                 break
         return Xn
 
+    def solveMdot(
+        self,
+        aeroProblem,
+        mdotStars,
+        surfaceNames,
+        mdotName="mdot",
+        psName="Ps",
+        derivName=None,
+        mdotMultipliers=None,
+        psInits=None,
+        # TODO consider adding this
+        derivInits=None,
+        # initial step if no derivatives are provided and we are doing a secant solver
+        secantStep=50.0,
+        tol=1e-3,
+        autoReset=False,
+        maxIter=20,
+        relaxDeriv=1.0,
+        # TODO consider adding this
+        relaxUpdate=1.0,
+        L2ConvRel=None,
+        stopOnStall=False,
+        writeSolution=False,
+        workUnitTime=None,
+        updateCutoff=1e-16,
+    ):
+        """ This is a solver routine that can adjust inlet pressures
+        to match a target mass flow rate on inlet BCs. The solver uses
+        the Secant method if "derivName" argument is None. If a function
+        that represents the mass flow rate derivative is provided, then
+        the solver uses the Newton's method to converge the mass flow rates.
+
+        Parameters
+        __________
+
+        aeroProblem : :class:`~baseclasses:baseclasses.problems.pyAero_problem.AeroProblem`
+            The aerodynamic problem to solve
+        mdotStars : list of floats
+            The desired target mdot values. The order of the list corresponds to the order
+            of surface names provided below in "surfaceNames".
+        surfaceNames : list of str
+            The list of surface names that will be used with the solver. This is a list
+            that contains the family names of all BCs user wants to solve for.
+        mdotName : str
+            Name of the function to be interpreted as mass flow rate.
+        psName : str
+            Name of the BC to be interpreted as the inlet static pressure.
+        derivName : str
+            If the users can define a custom function that can be used as the derivative
+            of mass flow rate with respect to the BC pressure, it can be added here. If
+            a custom function name is provided, the solver will use the Newton's method
+            with the provided derivative. If the default value of None is used, the solver
+            will use the Secant method to converge.
+        mdotMultipliers : list of floats
+            Array of multipliers for the mdot function. This is added because ADflow
+            will integrate mass flow rate in inlets to be negative by default. The
+            default value of None will set a multiplier of -1.0 for each mdot target.
+            This way, users can provide a positive mdot target by default.
+        psInits : list of floats
+            Initial values of the inlet BC to be used if different from the existing
+            value in the aeroProblem.
+        TODO derivInits : list of floats
+            List of initial derivative values. This can be used to initialize the derivative
+            for the Secant method.
+        secantStep : float
+            Initial delta pressure used for the Secant method. Unit is in Pa.
+        tol : float
+            Convergence tolerance for the target mdot value
+        autoReset : bool
+            Flag to reset flow between solves. The Euler NK method has
+            issues when only the alpha is changed (Martois effect we
+            think). This will reset the flow after each solve which
+            solves this problem. Not necessary (or desired) when using
+            the RK solver. The useCorrection option is the preferred
+            way of addressing this issue with the NK/ANK methods.
+            If solver still struggles after restarts with the correction,
+            this option can be used.
+        maxIter : int
+            Maximum number of solver iterations.
+        relaxDeriv : float
+            Amount of relaxation applied to the derivative update. Default is 1.0, which
+            will take the new derivative as is. A lower value can help if the derivative value
+            rapidly jumps or is noisy.
+        TODO relaxUpdate : float
+            Relaxation factor for the update. A value less than one will slow down convergence
+            but will improve robustness. Can be used to prevent the solver from taking large
+            steps.
+        L2ConvRel : float or list or None
+            Temporary relative L2 convergence for each iteration of the
+            CL solver. If the option is set to None, we don't modify the
+            L2ConvergenceRel option. If a float is provided, we use this
+            value as the target relative L2 convergence for each iteration.
+            If a list of floats is provided, we iterate over the values
+            and set the relative L2 convergence target separately for
+            each iteration. If the list length is less than the maximum
+            number of iterations we can perform, we keep using the last
+            value of the list until we run out of iterations.
+        stopOnStall : bool
+            Flag to determine if we want to stop early if the solver
+            fails to achieve the relative or total L2 convergence. This
+            is useful when the solver is expected to converge to the target
+            L2 tolerances at each call.
+        writeSolution : bool
+            Flag to enable a call to self.writeSolution as the CL solver
+            is finished.
+        workUnitTime : float or None
+            Optional parameter that will be passed to getConvergenceHistory
+            after each adflow call.
+        updateCutoff : float
+            Required change in alpha to trigger the clalpha update with the
+            Secant method. If the change in alpha is smaller than this option
+            we don't even bother changing clalpha and keep using the clalpha
+            value from the last iteration. This prevents clalpha from getting
+            bad updates due to noisy cl outputs that result from small alpha
+            changes.
+
+        Returns
+        -------
+        resultsDict : dictionary
+            Dictionary that contains various results from the mdot solve. The
+            dictionary contains the following data:
+
+            converged : bool
+                Flag indicating cl solver convergence. True means both the
+                mdot solver target tolerance AND the overall target L2 convergence
+                is achieved. False means either one or both of the tolerances
+                are not reached.
+            iterations : int
+                Number of iterations ran.
+            l2convergence : float
+                Final relative L2 convergence of the solver w.r.t. free
+                stream residual. Useful to check overall CFD convergence.
+            BCs : list of floats
+                Final BC values
+            mdots : list of floats
+                Final mdot values.
+            mdotstars : list of floats
+                The original target mdot values. returned for convenience.
+            mdoterrors : list of floats
+                Error in mdot values.
+            mdotderivs : list of floats
+                Estimate to mdot derivative used in the last solver iteration
+            time : float
+                Total time the solver needed, in seconds
+            history : list
+                List of solver convergence histories. Each entry
+                in the list contains the convergence history of the
+                solver from each CL Solve iteration. The history
+                is returned using the "getConvergenceHistory" method.
+        """
+
+        # time the CL solve
+        t1 = time.time()
+
+        # pointer to the iteration module for faster access
+        iterationModule = self.adflow.iteration
+
+        # prepare work arrays and lists
+        mdotNames = []
+        derivNames = []
+        bcNames = []
+        evalFuncs = []
+        for surf in surfaceNames:
+            mdotNames.append(f"{aeroProblem.name}_{mdotName}_{surf}")
+            bcNames.append(f"{psName}_{surf}_{aeroProblem.name}")
+            # in eval funcs, we want the func names w/o the ap name
+            evalFuncs.append(f"{mdotName}_{surf}")
+
+            if derivName is not None:
+                derivNames.append(f"{aeroProblem.name}_{derivName}_{surf}")
+                evalFuncs.append(f"{derivName}_{surf}")
+
+
+        # TODO check if the surf names and mdot targets have the same length
+
+        # TODO make sure the BCs are added as aero DVs
+
+        mdotStars = numpy.array(mdotStars)
+        mdots = numpy.zeros_like(mdotStars)
+        mdotDerivs = numpy.zeros_like(mdotStars)
+        curBCs = numpy.zeros_like(mdotStars)
+
+        if mdotMultipliers is None:
+            mdotMultipliers = -numpy.ones_like(mdotStars)
+
+        # create the string template we want to print for each iteration
+        iterString = (
+            "\n"
+            + "+--------------------------------------------------+\n"
+            + "|\n"
+            + "| Solve mdot Iteration   {iIter}\n"
+            + "| Elapsed Time           {curTime:.3f} sec\n"
+            + "|\n"
+            + "| L2 Convergence         {L2Conv}\n"
+            + "| L2 Rel Convergence     {L2ConvRel}\n"
+            + "+--------------------------------------------------+\n"
+        )
+
+        # add the output for each surface
+        for isurf, surf in enumerate(surfaceNames):
+            istring = f"{isurf}"
+            iterString += (
+                "| Surface:               " + surf + "\n"
+                + "| Ps                     {curBCs[" + istring + "]}\n"
+                + "| mdot                   {mdots[" + istring + "]}\n"
+                + "| mdotStar               {mdotStars[" + istring + "]}\n"
+                + "| Error                  {mdotErrors[" + istring + "]}\n"
+                + "| \n"
+                + "| mdotDeriv              {mdotDerivs[" + istring + "]}\n"
+                + "| Delta Ps               {deltaBCs[" + istring + "]}\n"
+                + "| New Ps                 {newBCs[" + istring + "]}\n"
+                + "+--------------------------------------------------+\n"
+            )
+
+        def setBCs(bcVals):
+            aero_dvs = {}
+            for isurf, surf in enumerate(surfaceNames):
+                aero_dvs[bcNames[isurf]] = bcVals[isurf]
+            aeroProblem.setDesignVars(aero_dvs)
+
+        def checkConvergence(curError):
+            # check if L2 Convergence is achieved, if not, we cant quit yet
+            # this is not the same as checking if AP solve worked. Here, we
+            # explicitly want to check if the final L2 target is reached,
+            # i.e. the solution is a valid converged state.
+            L2Conv = iterationModule.totalrfinal / iterationModule.totalr0
+            L2ConvTarget = self.getOption("L2Convergence")
+
+            # we check if the current error is below tolerance, and if we have also reached the L2 target
+            if abs(numpy.max(curError)) < tol and L2Conv <= L2ConvTarget:
+                converged = True
+            else:
+                converged = False
+
+            return converged
+
+        def finalizeSolver(resultsDict, modifiedOptions):
+            # exit the solver. we have a few housekeeping items:
+
+            # put back the modified options
+            for option, value in modifiedOptions.items():
+                self.setOption(option, value)
+
+            # write solution before returning if requested
+            if writeSolution:
+                self.writeSolution()
+
+            # final printout
+            if self.comm.rank == 0:
+                # print all results but the history
+                printDict = copy.deepcopy(resultsDict)
+                printDict.pop("history")
+                print("\n+--------------------------------------------------+")
+                print("| MdotSolve Results:")
+                print("+--------------------------------------------------+")
+                # print all but convergence history from every call
+                self.pp(printDict)
+                print("+--------------------------------------------------+\n", flush=True)
+
+            return
+
+        # list to keep track of convergence history
+        convergenceHistory = []
+
+        # Dictionary to keep track of all the options we have modified.
+        # We keep the original values in this dictionary to be put back once we are done.
+        modifiedOptions = {}
+
+        # check if we have a custom relative l2 convergence.
+        if L2ConvRel is not None:
+            # save the original value
+            modifiedOptions["L2ConvergenceRel"] = self.getOption("L2ConvergenceRel")
+
+            # if a single value is provided, convert it into a list so that we can apply it at each iteration
+            if isinstance(L2ConvRel, float):
+                L2ConvRel = [L2ConvRel] * maxIter
+            elif isinstance(L2ConvRel, list):
+                # we may need to extend this list if its shorter than maxIter
+                if len(L2ConvRel) < maxIter:
+                    # pick the last value and add
+                    L2ConvRel += [L2ConvRel[-1]] * (maxIter - len(L2ConvRel))
+            else:
+                raise Error("L2ConvRel needs to be a float or a list of floats")
+
+        # initialize the first alpha guess
+        if psInits is not None:
+            setBCs(psInits)
+            # also save the vals as the current value
+            curBCs = psInits
+        else:
+            # no initial value provided, we use the values from the AP
+            for isurf, surf in enumerate(surfaceNames):
+                curBCs[isurf] = aeroProblem.DVs[bcNames[isurf]].value
+
+        # Secant method iterations
+        for _iIter in range(0, maxIter):
+            if L2ConvRel is not None:
+                self.setOption("L2ConvergenceRel", L2ConvRel[_iIter])
+
+            # We may need to reset the flow since changing BCs might lead to problems with the NK solver
+            if autoReset:
+                self.resetFlow(aeroProblem)
+
+            # Solve with new values
+            self.__call__(aeroProblem, writeSolution=False)
+            convergenceHistory.append(self.getConvergenceHistory(workUnitTime=workUnitTime))
+
+            if _iIter > 0:
+                # only increment the call counter in the first call
+                self.curAP.adflowData.callCounter -= 1
+
+            # get the new func value and derivatives
+            funcs_full = {}
+            self.evalFunctions(aeroProblem, funcs_full, evalFuncs=evalFuncs)
+
+            for isurf, surf in enumerate(surfaceNames):
+                # get the mdot values
+                mdot_old = mdots[isurf]
+                mdots[isurf] = funcs_full[mdotNames[isurf]] * mdotMultipliers[isurf]
+
+                if derivName is not None:
+                    # get the derivatives and update with relaxation
+                    if _iIter == 0:
+                        mdotDerivs[isurf] = funcs_full[derivNames[isurf]]
+                    else:
+                        # check if we are above the update cutoff
+                        if numpy.abs(mdot_old - mdots[isurf]) > updateCutoff:
+                            mdotDerivs[isurf] = (1.0 - relaxDeriv) * mdotDerivs[isurf] + relaxDeriv * funcs_full[derivNames[isurf]]
+                else:
+                    # compute the derivative based on the last 2 iters
+                    if _iIter > 0:
+                        # TODO add the damped derivative update
+                        mdotDerivs[isurf] = (mdots[isurf] - oldmdots[isurf]) / (curBCs[isurf] - oldBCs[isurf])
+                    else:
+                        # TODO update this calc for the delta update
+                        # for the first secant iter, unless we are provided with an initial guess
+                        # just set the derivative so that the next step is secantStep in the right direction
+                        mdotDerivs[isurf] = -(mdots[isurf] - mdotStars[isurf]) / secantStep
+
+            # compute error
+            mdotErrors = mdots - mdotStars
+
+            # compute delta BC
+            deltaBCs = -numpy.divide(mdotErrors, mdotDerivs)
+
+            # current L2 convergence is also needed for the print
+            L2Conv = iterationModule.totalrfinal / iterationModule.totalr0
+
+            # print iteration info
+            if self.comm.rank == 0:
+                print(
+                    iterString.format(
+                        iIter=_iIter + 1,
+                        curTime=time.time() - t1,
+                        L2Conv=L2Conv,
+                        L2ConvRel=iterationModule.totalrfinal / iterationModule.totalrstart,
+                        curBCs=curBCs,
+                        mdots=mdots,
+                        mdotStars=mdotStars,
+                        mdotErrors=mdotErrors,
+                        mdotDerivs=mdotDerivs,
+                        deltaBCs=deltaBCs,
+                        newBCs=curBCs + deltaBCs,
+                    )
+                )
+
+            # Check for convergence if the starting point is already ok.
+            converged = checkConvergence(mdotErrors)
+
+            # rest of the results
+            t2 = time.time()
+            resultsDict = {
+                "converged": converged,
+                "iterations": _iIter + 1,
+                "l2convergence": L2Conv,
+                "BCs": curBCs,
+                "mdots": mdots,
+                "mdotstars": mdotStars,
+                "mdoterrors": mdotErrors,
+                "mdotderivs": mdotDerivs,
+                "time": t2 - t1,
+                "history": convergenceHistory,
+            }
+
+            if converged or (aeroProblem.solveFailed and stopOnStall) or aeroProblem.fatalFail:
+                finalizeSolver(resultsDict, modifiedOptions)
+                return resultsDict
+
+            # we did not converge yet. update BC variables and try again
+            oldBCs = curBCs.copy()
+            oldmdots = mdots.copy()
+            curBCs += deltaBCs
+            # set them in the AP
+            setBCs(curBCs)
+
+        # we ran out of iterations and did not exit yet. so this is a failed case
+        finalizeSolver(resultsDict, modifiedOptions)
+        return resultsDict
+
     def solveTargetFuncs(self, aeroProblem, funcDict, tol=1e-4, nIter=10, Jac0=None):
         """
         Solve the an arbitrary set of function-dv sets using a Broyden method.
