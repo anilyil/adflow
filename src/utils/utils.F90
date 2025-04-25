@@ -5643,66 +5643,66 @@ contains
         ! Print a nice error message. In case of a parallel executable
         ! also the processor id is printed.
 
-        print "(a)", "#"
-        print "(a)", "#--------------------------- !!! Error !!! &
-             &----------------------------"
+        ! print "(a)", "#"
+        ! print "(a)", "#--------------------------- !!! Error !!! &
+        !      &----------------------------"
 
-        write (integerString, "(i8)") myID
-        integerString = adjustl(integerString)
+        ! write (integerString, "(i8)") myID
+        ! integerString = adjustl(integerString)
 
-        print "(2a)", "#* returnFail called by processor ", &
-            trim(integerString)
+        ! print "(2a)", "#* returnFail called by processor ", &
+        !     trim(integerString)
 
-        ! Write the header of the error message.
+        ! ! Write the header of the error message.
 
-        print "(2a)", "#* Run-time error in procedure ", &
-            trim(routineName)
+        ! print "(2a)", "#* Run-time error in procedure ", &
+        !     trim(routineName)
 
-        ! Loop to write the error message. If the message is too long it
-        ! is split over several lines.
+        ! ! Loop to write the error message. If the message is too long it
+        ! ! is split over several lines.
 
-        firstTime = .true.
-        do
-            ! Determine the remaining error message to be written.
-            ! If longer than the maximum number of characters allowed
-            ! on a line, it is attempted to split the message.
+        ! firstTime = .true.
+        ! do
+        !     ! Determine the remaining error message to be written.
+        !     ! If longer than the maximum number of characters allowed
+        !     ! on a line, it is attempted to split the message.
 
-            message = adjustl(message)
-            len = len_trim(message)
-            i2 = min(maxCharLine, len)
+        !     message = adjustl(message)
+        !     len = len_trim(message)
+        !     i2 = min(maxCharLine, len)
 
-            if (i2 < len) i2 = index(message(:i2), " ", .true.) - 1
-            if (i2 < 0) i2 = index(message, " ") - 1
-            if (i2 < 0) i2 = len
+        !     if (i2 < len) i2 = index(message(:i2), " ", .true.) - 1
+        !     if (i2 < 0) i2 = index(message, " ") - 1
+        !     if (i2 < 0) i2 = len
 
-            ! Write this part of the error message. If it is the first
-            ! line of the message some additional stuff is printed.
+        !     ! Write this part of the error message. If it is the first
+        !     ! line of the message some additional stuff is printed.
 
-            if (firstTime) then
-                print "(2a)", "#* Error message: ", &
-                    trim(message(:i2))
-                firstTime = .false.
-            else
-                print "(2a)", "#*                ", &
-                    trim(message(:i2))
-            end if
+        !     if (firstTime) then
+        !         print "(2a)", "#* Error message: ", &
+        !             trim(message(:i2))
+        !         firstTime = .false.
+        !     else
+        !         print "(2a)", "#*                ", &
+        !             trim(message(:i2))
+        !     end if
 
-            ! Exit the loop if the entire message has been written.
+        !     ! Exit the loop if the entire message has been written.
 
-            if (i2 == len) exit
+        !     if (i2 == len) exit
 
-            ! Adapt the string for the next part to be written.
+        !     ! Adapt the string for the next part to be written.
 
-            message = message(i2 + 1:)
+        !     message = message(i2 + 1:)
 
-        end do
+        ! end do
 
-        ! Write the trailing message.
+        ! ! Write the trailing message.
 
-        print "(a)", "#*"
-        print "(a)", "#------------------------------------------&
-             &----------------------------"
-        print "(a)", "#"
+        ! print "(a)", "#*"
+        ! print "(a)", "#------------------------------------------&
+        !      &----------------------------"
+        ! print "(a)", "#"
 
         ! Call abort and stop the program. This stop should be done in
         ! abort, but just to be sure.
