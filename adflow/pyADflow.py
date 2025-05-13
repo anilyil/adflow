@@ -18,21 +18,24 @@ History
 v. 1.0  - Original pyAero Framework Implementation (RP,SM 2008)
 """
 
+import copy
+import hashlib
+
 # =============================================================================
 # Imports
 # =============================================================================
 import os
-import time
-import copy
-import types
-import numpy
 import sys
-from mpi4py import MPI
-from baseclasses import AeroSolver, AeroProblem, getPy3SafeString
-from baseclasses.utils import Error, CaseInsensitiveDict
-from . import MExt
-import hashlib
+import time
+import types
 from collections import OrderedDict
+
+import numpy
+from baseclasses import AeroProblem, AeroSolver, getPy3SafeString
+from baseclasses.utils import CaseInsensitiveDict, Error
+from mpi4py import MPI
+
+from . import MExt
 
 
 class ADFLOWWarning(object):
@@ -337,6 +340,33 @@ class ADFLOW(AeroSolver):
         initFlowTime = time.time()
 
         self.coords0 = self.getSurfaceCoordinates(self.allFamilies, includeZipper=False)
+
+        # Create coordinate masks for the foil section method
+        self.foilSectCoord = self.getOption("foilSectionCoord")
+        self.foilSectIndex = self.getOption("foilSectionIndex")
+        self.foilSectMode = self.getOption("foilSectionMode")
+        self.foilSectZeroMask = None
+        self.foilSectOneMask = None
+
+        if self.foilSectMode:
+            coords = self.mapVector(self.coords0, self.allFamilies, self.designFamilyGroup, includeZipper=False)
+
+            # find min/max values to compute the threshold
+            local_min = numpy.min(coords[:, self.foilSectIndex], initial=1e9)
+            local_max = numpy.max(coords[:, self.foilSectIndex], initial=-1e9)
+
+            global_min = comm.allreduce(local_min, op=MPI.MIN)
+            global_max = comm.allreduce(local_max, op=MPI.MAX)
+
+            threshold = (global_max + global_min) / 2
+
+            # tag the coordinates that are above/below the threshold
+            self.foilSectZeroMask = coords[:, self.foilSectIndex] < threshold
+            self.foilSectOneMask = coords[:, self.foilSectIndex] > threshold
+
+            # also save the foil coordinates at sect Zero and One. We will use these later to set the coordinates back to the correct values
+            self.foilSectZeroCoords = coords[self.foilSectZeroMask, self.foilSectIndex]
+            self.foilSectOneCoords = coords[self.foilSectOneMask, self.foilSectIndex]
 
         finalInitTime = time.time()
 
@@ -3321,6 +3351,12 @@ class ADFLOW(AeroSolver):
                     coords0 = self.mapVector(
                         self.coords0, self.allFamilies, self.designFamilyGroup, includeZipper=False
                     )
+                    # In foil section mode we want to collape the pointset to a single plane
+                    # based on the foil section index and coordinate
+                    if self.foilSectMode:
+                        # TODO add foil section to children dict changes
+                        coords0[:, self.foilSectIndex] = self.foilSectCoord
+
                     self.DVGeo.addPointSet(coords0, ptSetName, **self.pointSetKwargs)
             else:
                 # we have custom pointsets
@@ -3414,6 +3450,10 @@ class ADFLOW(AeroSolver):
             if updateSurface:
                 # the coords array is computed above. if we have the update surface flag enabled,
                 # run the surface update
+
+                if self.foilSectMode:
+                    coords[self.foilSectZeroMask, self.foilSectIndex] = self.foilSectZeroCoords
+                    coords[self.foilSectOneMask, self.foilSectIndex] = self.foilSectOneCoords
 
                 # Potentially add a fixed set of displacements to it.
                 if aeroProblem.adflowData.disp is not None:
@@ -6035,6 +6075,9 @@ class ADFLOW(AeroSolver):
             "cavSensorSharpness": [float, 10.0],
             "cavExponent": [int, 0],
             "computeCavitation": [bool, False],
+            "foilSectionMode": [bool, False],
+            "foilSectionIndex": [int, 1],
+            "foilSectionCoord": [float, 0.0],
         }
 
         return defOpts
@@ -6502,6 +6545,9 @@ class ADFLOW(AeroSolver):
             "useexternaldynamicmesh",
             "printalloptions",
             "printintro",
+            "foilsectionmode",
+            "foilsectioncoord",
+            "foilsectionindex",
         }
 
         # Deprecated options that may be in old scripts and should not be used.
