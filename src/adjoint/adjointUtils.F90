@@ -145,7 +145,7 @@ contains
                 do k = 2, kl
                     do j = 2, jl
                         do i = 2, il
-                            if (iblank(i, j, k) /= 1) then
+                            ! if (iblank(i, j, k) /= 1) then
                                 iRow = flowDoms(nn, level, sps)%globalCell(i, j, k)
                                 cols(1) = irow
                                 nCol = 1
@@ -158,7 +158,7 @@ contains
                                 end if
 
                                 call setBlock(blk)
-                            end if
+                            ! end if
                         end do
                     end do
                 end do
@@ -168,377 +168,377 @@ contains
         ! Set a pointer to the correct set of stencil depending on if we are
         ! using the first order stencil or the full jacobian
 
-        if (usePC) then
-            if (viscous .and. viscPC) then
-                stencil => visc_pc_stencil
-                n_stencil = N_visc_pc
-            else
-                stencil => euler_pc_stencil
-                n_stencil = N_euler_pc
-            end if
+!         if (usePC) then
+!             if (viscous .and. viscPC) then
+!                 stencil => visc_pc_stencil
+!                 n_stencil = N_visc_pc
+!             else
+!                 stencil => euler_pc_stencil
+!                 n_stencil = N_euler_pc
+!             end if
 
-            ! Very important to use only Second-Order dissipation for PC
-            lumpedDiss = .True.
-            ! We also do not apply acoustic scaling because artificial dissipation stabilizes the ILU factorization.
-            ! This is mentioned in "Newton-Krylov-Schwarz Methods for Aerodynamics Problems: Compressible
-            ! and Incompressible Flows on Unstructured Grids" by D. K. Kaushik, D. E. Keyes, and B. F. Smith (1998).
-            ! The linear system will not converge if we reduce the artificial dissipation for the PC.
-            acousticScaleSave = acousticScaleFactor
-            acousticScaleFactor = one
-            ! also use first order advection terms for turbulence
-            orderturbsave = orderturb
-            orderturb = firstOrder
-        else
-            if (viscous) then
-                stencil => visc_drdw_stencil
-                n_stencil = N_visc_drdw
-            else
-                stencil => euler_drdw_stencil
-                n_stencil = N_euler_drdw
-            end if
-        end if
+!             ! Very important to use only Second-Order dissipation for PC
+!             lumpedDiss = .True.
+!             ! We also do not apply acoustic scaling because artificial dissipation stabilizes the ILU factorization.
+!             ! This is mentioned in "Newton-Krylov-Schwarz Methods for Aerodynamics Problems: Compressible
+!             ! and Incompressible Flows on Unstructured Grids" by D. K. Kaushik, D. E. Keyes, and B. F. Smith (1998).
+!             ! The linear system will not converge if we reduce the artificial dissipation for the PC.
+!             acousticScaleSave = acousticScaleFactor
+!             acousticScaleFactor = one
+!             ! also use first order advection terms for turbulence
+!             orderturbsave = orderturb
+!             orderturb = firstOrder
+!         else
+!             if (viscous) then
+!                 stencil => visc_drdw_stencil
+!                 n_stencil = N_visc_drdw
+!             else
+!                 stencil => euler_drdw_stencil
+!                 n_stencil = N_euler_drdw
+!             end if
+!         end if
 
-        ! Need to trick the residual evalution to use coupled (mean flow and
-        ! turbulent) together.
+!         ! Need to trick the residual evalution to use coupled (mean flow and
+!         ! turbulent) together.
 
-        ! If we want to do the matrix on a coarser level, we must first
-        ! restrict the fine grid solutions, since it is possible the
-        ! NKsolver was used an the coarse grid solutions are (very!) out of
-        ! date.
+!         ! If we want to do the matrix on a coarser level, we must first
+!         ! restrict the fine grid solutions, since it is possible the
+!         ! NKsolver was used an the coarse grid solutions are (very!) out of
+!         ! date.
 
-        ! Assembling matrix on coarser levels is not entirely implemented yet.
-        currentLevel = level
-        groundLevel = level
+!         ! Assembling matrix on coarser levels is not entirely implemented yet.
+!         currentLevel = level
+!         groundLevel = level
 
-        ! Set delta_x
-        delta_x = 1e-9_realType
-        one_over_dx = one / delta_x
-        rkStage = 0
+!         ! Set delta_x
+!         delta_x = 1e-9_realType
+!         one_over_dx = one / delta_x
+!         rkStage = 0
 
-        ! Determine if we want to use frozenTurbulent Adjoint
-        resetToRANS = .False.
-        if (frozenTurb .and. equations == RANSEquations) then
-            equations = NSEquations
-            resetToRANS = .True.
-        end if
+!         ! Determine if we want to use frozenTurbulent Adjoint
+!         resetToRANS = .False.
+!         if (frozenTurb .and. equations == RANSEquations) then
+!             equations = NSEquations
+!             resetToRANS = .True.
+!         end if
 
-        ! Allocate the additional memory we need for doing forward mode AD
-        !  derivatives and copy any required reference values:
-        if (.not. derivVarsAllocated .and. useAD) then
-            call allocDerivativeValues(level)
-        end if
+!         ! Allocate the additional memory we need for doing forward mode AD
+!         !  derivatives and copy any required reference values:
+!         if (.not. derivVarsAllocated .and. useAD) then
+!             call allocDerivativeValues(level)
+!         end if
 
-        ! For AD the initial seeds must all be zeroed.
-        if (useAD) then
-            do nn = 1, nDom
-                do sps = 1, nTimeIntervalsSpectral
-                    call setPointers(nn, level, sps)
-                    call zeroADSeeds(nn, level, sps)
-                end do
-            end do
-        end if
+!         ! For AD the initial seeds must all be zeroed.
+!         if (useAD) then
+!             do nn = 1, nDom
+!                 do sps = 1, nTimeIntervalsSpectral
+!                     call setPointers(nn, level, sps)
+!                     call zeroADSeeds(nn, level, sps)
+!                 end do
+!             end do
+!         end if
 
-        do nn = 1, nDom
-            do sps = 1, nTimeIntervalsSpectral
-                call setPointers(nn, level, sps)
+!         do nn = 1, nDom
+!             do sps = 1, nTimeIntervalsSpectral
+!                 call setPointers(nn, level, sps)
 
-                ! Allocate some extra routines used only for assembly
-                allocate ( &
-                    flowDoms(nn, level, sps)%dw_deriv(2:il, 2:jl, 2:kl, 1:nw, 1:nw), &
-                    flowDoms(nn, level, sps)%wtmp(0:ib, 0:jb, 0:kb, 1:nw), &
-                    flowDoms(nn, level, sps)%dwtmp(0:ib, 0:jb, 0:kb, 1:nw), &
-                    flowDoms(nn, level, sps)%dwtmp2(0:ib, 0:jb, 0:kb, 1:nw), &
-                    stat=ierr)
-                call EChk(ierr, __FILE__, __LINE__)
+!                 ! Allocate some extra routines used only for assembly
+!                 allocate ( &
+!                     flowDoms(nn, level, sps)%dw_deriv(2:il, 2:jl, 2:kl, 1:nw, 1:nw), &
+!                     flowDoms(nn, level, sps)%wtmp(0:ib, 0:jb, 0:kb, 1:nw), &
+!                     flowDoms(nn, level, sps)%dwtmp(0:ib, 0:jb, 0:kb, 1:nw), &
+!                     flowDoms(nn, level, sps)%dwtmp2(0:ib, 0:jb, 0:kb, 1:nw), &
+!                     stat=ierr)
+!                 call EChk(ierr, __FILE__, __LINE__)
 
-                if (sps == 1) then
-                    allocate (flowDoms(nn, level, sps)%color(0:ib, 0:jb, 0:kb), stat=ierr)
-                    call EChk(ierr, __FILE__, __LINE__)
-                end if
-            end do
-        end do
+!                 if (sps == 1) then
+!                     allocate (flowDoms(nn, level, sps)%color(0:ib, 0:jb, 0:kb), stat=ierr)
+!                     call EChk(ierr, __FILE__, __LINE__)
+!                 end if
+!             end do
+!         end do
 
-        ! For the PC we don't linearize the shock sensor so it must be
-        ! computed here.
+!         ! For the PC we don't linearize the shock sensor so it must be
+!         ! computed here.
 
-        if (usePC) then
-            call referenceShockSensor
-        end if
+!         if (usePC) then
+!             call referenceShockSensor
+!         end if
 
-        ! For FD, the initial reference values must be computed and stored.
-        if (.not. useAD) then
-            call setFDReference(level)
-        end if
+!         ! For FD, the initial reference values must be computed and stored.
+!         if (.not. useAD) then
+!             call setFDReference(level)
+!         end if
 
-        ! Master Domain Loop
-        domainLoopAD: do nn = 1, nDom
+!         ! Master Domain Loop
+!         domainLoopAD: do nn = 1, nDom
 
-            ! Set pointers to the first timeInstance...just to getSizes
-            call setPointers(nn, level, 1)
-            ! Set unknown sizes in diffSizes for AD routine
-            ISIZE1OFDrfbcdata = nBocos
-            ISIZE1OFDrfviscsubface = nViscBocos
+!             ! Set pointers to the first timeInstance...just to getSizes
+!             call setPointers(nn, level, 1)
+!             ! Set unknown sizes in diffSizes for AD routine
+!             ISIZE1OFDrfbcdata = nBocos
+!             ISIZE1OFDrfviscsubface = nViscBocos
 
-            ! Setup the coloring for this block depending on if its
-            ! drdw or a PC
+!             ! Setup the coloring for this block depending on if its
+!             ! drdw or a PC
 
-            ! List of all Coloring Routines:
-            !   Debugging Colorings Below:
-            !       call setup_3x3x3_coloring(nn, level,  nColor)
-            !       call setup_5x5x5_coloring(nn, level,  nColor)
-            !       call setup_BF_coloring(nn, level,  nColor)
-            !   Regular:
-            !       call setup_PC_coloring(nn, level,  nColor)
-            !       call setup_dRdw_euler_coloring(nn, level,  nColor)
-            !       call setup_dRdw_visc_coloring(nn, level,  nColor)
+!             ! List of all Coloring Routines:
+!             !   Debugging Colorings Below:
+!             !       call setup_3x3x3_coloring(nn, level,  nColor)
+!             !       call setup_5x5x5_coloring(nn, level,  nColor)
+!             !       call setup_BF_coloring(nn, level,  nColor)
+!             !   Regular:
+!             !       call setup_PC_coloring(nn, level,  nColor)
+!             !       call setup_dRdw_euler_coloring(nn, level,  nColor)
+!             !       call setup_dRdw_visc_coloring(nn, level,  nColor)
 
-            if (usePC) then
-                if (viscous .and. viscPC) then
-                    call setup_3x3x3_coloring(nn, level, nColor) ! dense 3x3x3 coloring
-                else
-                    call setup_PC_coloring(nn, level, nColor) ! Euler Colorings
-                end if
-            else
-                if (viscous) then
-                    !call setup_5x5x5_coloring(nn, level,  nColor)
-                    call setup_dRdw_visc_coloring(nn, level, nColor)! Viscous/RANS
-                else
-                    call setup_dRdw_euler_coloring(nn, level, nColor) ! Euler Colorings
-                end if
-            end if
+!             if (usePC) then
+!                 if (viscous .and. viscPC) then
+!                     call setup_3x3x3_coloring(nn, level, nColor) ! dense 3x3x3 coloring
+!                 else
+!                     call setup_PC_coloring(nn, level, nColor) ! Euler Colorings
+!                 end if
+!             else
+!                 if (viscous) then
+!                     !call setup_5x5x5_coloring(nn, level,  nColor)
+!                     call setup_dRdw_visc_coloring(nn, level, nColor)! Viscous/RANS
+!                 else
+!                     call setup_dRdw_euler_coloring(nn, level, nColor) ! Euler Colorings
+!                 end if
+!             end if
 
-            spectralLoop: do sps = 1, nTimeIntervalsSpectral
-                ! Set pointers and (possibly derivative pointers)
-                if (useAD) then
-                    call setPointers_d(nn, level, sps)
-                else
-                    call setPointers(nn, level, sps)
-                end if
+!             spectralLoop: do sps = 1, nTimeIntervalsSpectral
+!                 ! Set pointers and (possibly derivative pointers)
+!                 if (useAD) then
+!                     call setPointers_d(nn, level, sps)
+!                 else
+!                     call setPointers(nn, level, sps)
+!                 end if
 
-                ! Do Coloring and perturb states
-                colorLoop: do iColor = 1, nColor
-                    do sps2 = 1, nTimeIntervalsSpectral
-                        flowDoms(nn, 1, sps2)%dw_deriv(:, :, :, :, :) = zero
-                    end do
+!                 ! Do Coloring and perturb states
+!                 colorLoop: do iColor = 1, nColor
+!                     do sps2 = 1, nTimeIntervalsSpectral
+!                         flowDoms(nn, 1, sps2)%dw_deriv(:, :, :, :, :) = zero
+!                     end do
 
-                    ! Master State Loop
-                    stateLoop: do l = lStart, lEnd
+!                     ! Master State Loop
+!                     stateLoop: do l = lStart, lEnd
 
-                        ! Reset All States and possibe AD seeds
-                        do sps2 = 1, nTimeIntervalsSpectral
-                            if (.not. useAD) then
-                                do ll = 1, nw
-                                    do k = 0, kb
-                                        do j = 0, jb
-                                            do i = 0, ib
-                                                flowDoms(nn, level, sps2)%w(i, j, k, ll) = &
-                                                    flowDoms(nn, 1, sps2)%wtmp(i, j, k, ll)
-                                            end do
-                                        end do
-                                    end do
-                                end do
-                            end if
+!                         ! Reset All States and possibe AD seeds
+!                         do sps2 = 1, nTimeIntervalsSpectral
+!                             if (.not. useAD) then
+!                                 do ll = 1, nw
+!                                     do k = 0, kb
+!                                         do j = 0, jb
+!                                             do i = 0, ib
+!                                                 flowDoms(nn, level, sps2)%w(i, j, k, ll) = &
+!                                                     flowDoms(nn, 1, sps2)%wtmp(i, j, k, ll)
+!                                             end do
+!                                         end do
+!                                     end do
+!                                 end do
+!                             end if
 
-                            if (useAD) then
-                                flowdomsd(nn, 1, sps2)%w = zero ! This is actually w seed
-                            end if
-                        end do
+!                             if (useAD) then
+!                                 flowdomsd(nn, 1, sps2)%w = zero ! This is actually w seed
+!                             end if
+!                         end do
 
-                        ! Peturb w or set AD Seed according to iColor. Note:
-                        ! Do NOT try to putt he useAD if check inside the
-                        ! color if check. ifort barfs hard-core on that and it
-                        ! segfaults with AVX2
-                        if (useAD) then
-                            do k = 0, kb
-                                do j = 0, jb
-                                    do i = 0, ib
-                                        if (flowdoms(nn, 1, 1)%color(i, j, k) == icolor) then
-                                            flowDomsd(nn, 1, sps)%w(i, j, k, l) = one
-                                        end if
-                                    end do
-                                end do
-                            end do
-                        else
-                            do k = 0, kb
-                                do j = 0, jb
-                                    do i = 0, ib
-                                        if (flowdoms(nn, 1, 1)%color(i, j, k) == icolor) then
-                                            w(i, j, k, l) = w(i, j, k, l) + delta_x
-                                        end if
-                                    end do
-                                end do
-                            end do
-                        end if
+!                         ! Peturb w or set AD Seed according to iColor. Note:
+!                         ! Do NOT try to putt he useAD if check inside the
+!                         ! color if check. ifort barfs hard-core on that and it
+!                         ! segfaults with AVX2
+!                         if (useAD) then
+!                             do k = 0, kb
+!                                 do j = 0, jb
+!                                     do i = 0, ib
+!                                         if (flowdoms(nn, 1, 1)%color(i, j, k) == icolor) then
+!                                             flowDomsd(nn, 1, sps)%w(i, j, k, l) = one
+!                                         end if
+!                                     end do
+!                                 end do
+!                             end do
+!                         else
+!                             do k = 0, kb
+!                                 do j = 0, jb
+!                                     do i = 0, ib
+!                                         if (flowdoms(nn, 1, 1)%color(i, j, k) == icolor) then
+!                                             w(i, j, k, l) = w(i, j, k, l) + delta_x
+!                                         end if
+!                                     end do
+!                                 end do
+!                             end do
+!                         end if
 
-                        ! Run Block-based residual
-                        if (useAD) then
-#ifndef USE_COMPLEX
-                            call block_res_state_d(nn, sps)
-#else
-                            print *, 'Forward AD routines are not complexified'
-                            stop
-#endif
-                        else
-                            call block_res_state(nn, sps, useFlowRes=flowRes, useTurbRes=turbRes)
-                        end if
+!                         ! Run Block-based residual
+!                         if (useAD) then
+! #ifndef USE_COMPLEX
+!                             call block_res_state_d(nn, sps)
+! #else
+!                             print *, 'Forward AD routines are not complexified'
+!                             stop
+! #endif
+!                         else
+!                             call block_res_state(nn, sps, useFlowRes=flowRes, useTurbRes=turbRes)
+!                         end if
 
-                        ! Set the computed residual in dw_deriv. If using FD,
-                        ! actually do the FD calculation if AD, just copy out dw
-                        ! in flowdomsd
+!                         ! Set the computed residual in dw_deriv. If using FD,
+!                         ! actually do the FD calculation if AD, just copy out dw
+!                         ! in flowdomsd
 
-                        ! Compute/Copy all derivatives
-                        do sps2 = 1, nTimeIntervalsSpectral
-                            do ll = lStart, lEnd
-                                do k = 2, kl
-                                    do j = 2, jl
-                                        do i = 2, il
-                                            if (useAD) then
-                                                flowDoms(nn, 1, sps2)%dw_deriv(i, j, k, ll, l) = &
-                                                    flowdomsd(nn, 1, sps2)%dw(i, j, k, ll)
-                                            else
-                                                if (sps2 == sps) then
-                                                    ! If the peturbation is on this
-                                                    ! instance, we've computed the spatial
-                                                    ! contribution so subtrace dwtmp
+!                         ! Compute/Copy all derivatives
+!                         do sps2 = 1, nTimeIntervalsSpectral
+!                             do ll = lStart, lEnd
+!                                 do k = 2, kl
+!                                     do j = 2, jl
+!                                         do i = 2, il
+!                                             if (useAD) then
+!                                                 flowDoms(nn, 1, sps2)%dw_deriv(i, j, k, ll, l) = &
+!                                                     flowdomsd(nn, 1, sps2)%dw(i, j, k, ll)
+!                                             else
+!                                                 if (sps2 == sps) then
+!                                                     ! If the peturbation is on this
+!                                                     ! instance, we've computed the spatial
+!                                                     ! contribution so subtrace dwtmp
 
-                                                    flowDoms(nn, 1, sps2)%dw_deriv(i, j, k, ll, l) = &
-                                                        one_over_dx * &
-                                                        (flowDoms(nn, 1, sps2)%dw(i, j, k, ll) - &
-                                                         flowDoms(nn, 1, sps2)%dwtmp(i, j, k, ll))
-                                                else
-                                                    ! If the peturbation is on an off
-                                                    ! instance, only subtract dwtmp2
-                                                    ! which is the reference result
-                                                    ! after initres
+!                                                     flowDoms(nn, 1, sps2)%dw_deriv(i, j, k, ll, l) = &
+!                                                         one_over_dx * &
+!                                                         (flowDoms(nn, 1, sps2)%dw(i, j, k, ll) - &
+!                                                          flowDoms(nn, 1, sps2)%dwtmp(i, j, k, ll))
+!                                                 else
+!                                                     ! If the peturbation is on an off
+!                                                     ! instance, only subtract dwtmp2
+!                                                     ! which is the reference result
+!                                                     ! after initres
 
-                                                    flowDoms(nn, 1, sps2)%dw_deriv(i, j, k, ll, l) = &
-                                                        one_over_dx * ( &
-                                                        flowDoms(nn, 1, sps2)%dw(i, j, k, ll) - &
-                                                        flowDoms(nn, 1, sps2)%dwtmp2(i, j, k, ll))
-                                                end if
-                                            end if
-                                        end do
-                                    end do
-                                end do
-                            end do
-                        end do
-                    end do stateLoop
+!                                                     flowDoms(nn, 1, sps2)%dw_deriv(i, j, k, ll, l) = &
+!                                                         one_over_dx * ( &
+!                                                         flowDoms(nn, 1, sps2)%dw(i, j, k, ll) - &
+!                                                         flowDoms(nn, 1, sps2)%dwtmp2(i, j, k, ll))
+!                                                 end if
+!                                             end if
+!                                         end do
+!                                     end do
+!                                 end do
+!                             end do
+!                         end do
+!                     end do stateLoop
 
-                    ! Set derivatives by block in "matrix" after we've peturbed
-                    ! all states in "color"
+!                     ! Set derivatives by block in "matrix" after we've peturbed
+!                     ! all states in "color"
 
-                    kLoop: do k = 0, kb
-                        jLoop: do j = 0, jb
-                            iLoop: do i = 0, ib
-                                colBlank: if (flowDoms(nn, level, sps)%iblank(i, j, k) == 1 .or. &
-                                              flowDoms(nn, level, sps)%iBlank(i, j, k) == -1) then
+!                     kLoop: do k = 0, kb
+!                         jLoop: do j = 0, jb
+!                             iLoop: do i = 0, ib
+!                                 colBlank: if (flowDoms(nn, level, sps)%iblank(i, j, k) == 1 .or. &
+!                                               flowDoms(nn, level, sps)%iBlank(i, j, k) == -1) then
 
-                                    ! If the cell we perturned ('iCol') is an
-                                    ! interpolated cell, we don't actually use
-                                    ! iCol, rather we use the 8 real donors that
-                                    ! comprise the cell's value.
-                                    if (flowDoms(nn, level, sps)%iblank(i, j, k) == 1) then
-                                        cols(1) = flowDoms(nn, level, sps)%globalCell(i, j, k)
-                                        nCol = 1
+!                                     ! If the cell we perturned ('iCol') is an
+!                                     ! interpolated cell, we don't actually use
+!                                     ! iCol, rather we use the 8 real donors that
+!                                     ! comprise the cell's value.
+!                                     if (flowDoms(nn, level, sps)%iblank(i, j, k) == 1) then
+!                                         cols(1) = flowDoms(nn, level, sps)%globalCell(i, j, k)
+!                                         nCol = 1
 
-                                        if (buildCoarseMats) then
-                                            do lvl = 1, amgLevels - 1
-                                                coarseCols(1, lvl + 1) = coarseIndices(nn, lvl)%arr(i, j, k)
-                                            end do
-                                        end if
+!                                         if (buildCoarseMats) then
+!                                             do lvl = 1, amgLevels - 1
+!                                                 coarseCols(1, lvl + 1) = coarseIndices(nn, lvl)%arr(i, j, k)
+!                                             end do
+!                                         end if
 
-                                    else
-                                        do m = 1, 8
-                                            cols(m) = flowDoms(nn, level, sps)%gInd(m, i, j, k)
+!                                     else
+!                                         do m = 1, 8
+!                                             cols(m) = flowDoms(nn, level, sps)%gInd(m, i, j, k)
 
-                                            if (buildCoarseMats) then
-                                                do lvl = 1, amgLevels - 1
-                                                    coarseCols(m, lvl + 1) = &
-                                                        coarseOversetIndices(nn, lvl)%arr(m, i, j, k)
-                                                end do
-                                            end if
-                                        end do
+!                                             if (buildCoarseMats) then
+!                                                 do lvl = 1, amgLevels - 1
+!                                                     coarseCols(m, lvl + 1) = &
+!                                                         coarseOversetIndices(nn, lvl)%arr(m, i, j, k)
+!                                                 end do
+!                                             end if
+!                                         end do
 
-                                        fInd = fringePtr(1, i, j, k)
-                                        call fracToWeights(flowDoms(nn, level, sps)%fringes(fInd)%donorFrac, &
-                                                           weights)
-                                        nCol = 8
-                                    end if
+!                                         fInd = fringePtr(1, i, j, k)
+!                                         call fracToWeights(flowDoms(nn, level, sps)%fringes(fInd)%donorFrac, &
+!                                                            weights)
+!                                         nCol = 8
+!                                     end if
 
-                                    colorCheck: if (flowdoms(nn, 1, 1)%color(i, j, k) == icolor) then
+!                                     colorCheck: if (flowdoms(nn, 1, 1)%color(i, j, k) == icolor) then
 
-                                        ! i, j, k are now the "Center" cell that we
-                                        ! actually petrubed. From knowledge of the
-                                        ! stencil, we can simply take this cell and
-                                        ! using the stencil, set the values around it
-                                        ! in PETSc
+!                                         ! i, j, k are now the "Center" cell that we
+!                                         ! actually petrubed. From knowledge of the
+!                                         ! stencil, we can simply take this cell and
+!                                         ! using the stencil, set the values around it
+!                                         ! in PETSc
 
-                                        stencilLoop: do i_stencil = 1, n_stencil
-                                            ii = stencil(i_stencil, 1)
-                                            jj = stencil(i_stencil, 2)
-                                            kk = stencil(i_stencil, 3)
+!                                         stencilLoop: do i_stencil = 1, n_stencil
+!                                             ii = stencil(i_stencil, 1)
+!                                             jj = stencil(i_stencil, 2)
+!                                             kk = stencil(i_stencil, 3)
 
-                                            ! Check to see if the cell in this
-                                            ! sentcil is on a physical cell, not a
-                                            ! halo/BC halo
-                                            onBlock: if (i + ii >= 2 .and. i + ii <= il .and. &
-                                                         j + jj >= 2 .and. j + jj <= jl .and. &
-                                                         k + kk >= 2 .and. k + kk <= kl) then
+!                                             ! Check to see if the cell in this
+!                                             ! sentcil is on a physical cell, not a
+!                                             ! halo/BC halo
+!                                             onBlock: if (i + ii >= 2 .and. i + ii <= il .and. &
+!                                                          j + jj >= 2 .and. j + jj <= jl .and. &
+!                                                          k + kk >= 2 .and. k + kk <= kl) then
 
-                                                irow = flowDoms(nn, level, sps)%globalCell( &
-                                                       i + ii, j + jj, k + kk)
+!                                                 irow = flowDoms(nn, level, sps)%globalCell( &
+!                                                        i + ii, j + jj, k + kk)
 
-                                                if (buildCoarseMats) then
-                                                    do lvl = 1, amgLevels - 1
-                                                        coarseRows(lvl + 1) = &
-                                                            coarseIndices(nn, lvl)%arr(i + ii, j + jj, k + kk)
-                                                    end do
-                                                end if
+!                                                 if (buildCoarseMats) then
+!                                                     do lvl = 1, amgLevels - 1
+!                                                         coarseRows(lvl + 1) = &
+!                                                             coarseIndices(nn, lvl)%arr(i + ii, j + jj, k + kk)
+!                                                     end do
+!                                                 end if
 
-                                                rowBlank: if (flowDoms(nn, level, sps)% &
-                                                              iBlank(i + ii, j + jj, k + kk) == 1) then
+!                                                 rowBlank: if (flowDoms(nn, level, sps)% &
+!                                                               iBlank(i + ii, j + jj, k + kk) == 1) then
 
-                                                    centerCell: if (ii == 0 .and. jj == 0 .and. kk == 0) then
-                                                        useDiagPC: if (usePC .and. useDiagTSPC) then
-                                                            ! If we're doing the PC and we want
-                                                            ! to use TS diagonal form, only set
-                                                            ! values for on-time insintance
-                                                            blk = flowDoms(nn, 1, sps)%dw_deriv(i + ii, &
-                                                                                                j + jj, k + kk, &
-                                                                                                lStart:lEnd, &
-                                                                                                lStart:lEnd)
-                                                            call setBlock(blk)
-                                                        else
-                                                            ! Otherwise loop over spectral
-                                                            ! instances and set all.
-                                                            do sps2 = 1, nTimeIntervalsSpectral
-                                                                irow = flowDoms(nn, level, sps2)% &
-                                                                       globalCell(i + ii, &
-                                                                                  j + jj, k + kk)
-                                                                blk = flowDoms(nn, 1, sps2)% &
-                                                                      dw_deriv(i + ii, &
-                                                                               j + jj, k + kk, &
-                                                                               lStart:lEnd, lStart:lEnd)
-                                                                call setBlock(blk)
-                                                            end do
-                                                        end if useDiagPC
-                                                    else
-                                                        ! ALl other cells just set.
-                                                        blk = flowDoms(nn, 1, sps)%dw_deriv(i + ii, j + jj, k + kk, &
-                                                                                            lStart:lEnd, lStart:lEnd)
-                                                        call setBlock(blk)
-                                                    end if centerCell
-                                                end if rowBlank
-                                            end if onBlock
-                                        end do stencilLoop
-                                    end if colorCheck
-                                end if colBlank
-                            end do iLoop
-                        end do jLoop
-                    end do kLoop
-                end do colorLoop
-            end do spectralLoop
-        end do domainLoopAD
+!                                                     centerCell: if (ii == 0 .and. jj == 0 .and. kk == 0) then
+!                                                         useDiagPC: if (usePC .and. useDiagTSPC) then
+!                                                             ! If we're doing the PC and we want
+!                                                             ! to use TS diagonal form, only set
+!                                                             ! values for on-time insintance
+!                                                             blk = flowDoms(nn, 1, sps)%dw_deriv(i + ii, &
+!                                                                                                 j + jj, k + kk, &
+!                                                                                                 lStart:lEnd, &
+!                                                                                                 lStart:lEnd)
+!                                                             call setBlock(blk)
+!                                                         else
+!                                                             ! Otherwise loop over spectral
+!                                                             ! instances and set all.
+!                                                             do sps2 = 1, nTimeIntervalsSpectral
+!                                                                 irow = flowDoms(nn, level, sps2)% &
+!                                                                        globalCell(i + ii, &
+!                                                                                   j + jj, k + kk)
+!                                                                 blk = flowDoms(nn, 1, sps2)% &
+!                                                                       dw_deriv(i + ii, &
+!                                                                                j + jj, k + kk, &
+!                                                                                lStart:lEnd, lStart:lEnd)
+!                                                                 call setBlock(blk)
+!                                                             end do
+!                                                         end if useDiagPC
+!                                                     else
+!                                                         ! ALl other cells just set.
+!                                                         blk = flowDoms(nn, 1, sps)%dw_deriv(i + ii, j + jj, k + kk, &
+!                                                                                             lStart:lEnd, lStart:lEnd)
+!                                                         call setBlock(blk)
+!                                                     end if centerCell
+!                                                 end if rowBlank
+!                                             end if onBlock
+!                                         end do stencilLoop
+!                                     end if colorCheck
+!                                 end if colBlank
+!                             end do iLoop
+!                         end do jLoop
+!                     end do kLoop
+!                 end do colorLoop
+!             end do spectralLoop
+!         end do domainLoopAD
 
         ! PETSc Matrix Assembly begin
         call MatAssemblyBegin(matrix, MAT_FINAL_ASSEMBLY, ierr)
@@ -554,37 +554,37 @@ contains
         ! Maybe we can do something useful while the communication happens?
         ! Deallocate the temporary memory used in this routine.
 
-        ! Deallocate and reset values
-        if (.not. useAD) then
-            call resetFDReference(level)
-        end if
+        ! ! Deallocate and reset values
+        ! if (.not. useAD) then
+        !     call resetFDReference(level)
+        ! end if
 
-        do nn = 1, nDom
-            do sps = 1, nTimeIntervalsSpectral
-                deallocate ( &
-                    flowDoms(nn, 1, sps)%dw_deriv, &
-                    flowDoms(nn, 1, sps)%wTmp, &
-                    flowDoms(nn, 1, sps)%dwTmp, &
-                    flowDoms(nn, 1, sps)%dwTmp2)
-                if (sps == 1) then
-                    deallocate (flowDoms(nn, 1, 1)%color)
-                end if
-            end do
-        end do
+        ! do nn = 1, nDom
+        !     do sps = 1, nTimeIntervalsSpectral
+        !         deallocate ( &
+        !             flowDoms(nn, 1, sps)%dw_deriv, &
+        !             flowDoms(nn, 1, sps)%wTmp, &
+        !             flowDoms(nn, 1, sps)%dwTmp, &
+        !             flowDoms(nn, 1, sps)%dwTmp2)
+        !         if (sps == 1) then
+        !             deallocate (flowDoms(nn, 1, 1)%color)
+        !         end if
+        !     end do
+        ! end do
 
-        ! Return dissipation Parameters to normal -> VERY VERY IMPORTANT
-        if (usePC) then
-            lumpedDiss = .False.
-            acousticScaleFactor = acousticScaleSave
-            ! also recover the turbulence advection order
-            orderturb = orderturbsave
-        end if
+        ! ! Return dissipation Parameters to normal -> VERY VERY IMPORTANT
+        ! if (usePC) then
+        !     lumpedDiss = .False.
+        !     acousticScaleFactor = acousticScaleSave
+        !     ! also recover the turbulence advection order
+        !     orderturb = orderturbsave
+        ! end if
 
-        ! Reset the correct equation parameters if we were useing the frozen
-        ! Turbulent
-        if (resetToRANS) then
-            equations = RANSEquations
-        end if
+        ! ! Reset the correct equation parameters if we were useing the frozen
+        ! ! Turbulent
+        ! if (resetToRANS) then
+        !     equations = RANSEquations
+        ! end if
 
         deallocate (blk)
 
