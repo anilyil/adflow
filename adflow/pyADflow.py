@@ -2092,8 +2092,8 @@ class ADFLOW(AeroSolver):
         # consistently named when multiple CL solutions are performed back to back.
         self.__call__(aeroProblem, writeSolution=False)
         convergenceHistory.append(self.getConvergenceHistory(workUnitTime=workUnitTime))
-        sol = self.getSolution()
-        fnm2 = sol[funcName] - CLStar
+        sol = self.getSolution(groupName=surfName)
+        fnm2 = sol["cl"] - CLStar
 
         if CLalphaGuess is None:
             # Use the delta option to define the next Aoa
@@ -2121,7 +2121,7 @@ class ADFLOW(AeroSolver):
                     L2Conv=L2Conv,
                     L2ConvRel=iterationModule.totalrfinal / iterationModule.totalrstart,
                     curAlpha=aeroProblem.alpha,
-                    CL=sol[funcName],
+                    CL=sol["cl"],
                     CLStar=CLStar,
                     err=fnm2,
                     clalpha=clalpha,
@@ -2134,8 +2134,8 @@ class ADFLOW(AeroSolver):
         converged = checkConvergence(fnm2)
 
         # rest of the results
-        CL = sol[funcName]
-        err = sol[funcName] - CLStar
+        CL = sol["cl"]
+        err = sol["cl"] - CLStar
         t2 = time.time()
         resultsDict = {
             "converged": converged,
@@ -2172,8 +2172,8 @@ class ADFLOW(AeroSolver):
             convergenceHistory.append(self.getConvergenceHistory(workUnitTime=workUnitTime))
 
             self.curAP.adflowData.callCounter -= 1
-            sol = self.getSolution()
-            fnm1 = sol[funcName] - CLStar
+            sol = self.getSolution(groupName=surfName)
+            fnm1 = sol["cl"] - CLStar
 
             # Secant Update
             if _iIter == 1 and CLalphaGuess is None:
@@ -2208,7 +2208,7 @@ class ADFLOW(AeroSolver):
                         L2Conv=L2Conv,
                         L2ConvRel=iterationModule.totalrfinal / iterationModule.totalrstart,
                         curAlpha=aeroProblem.alpha,
-                        CL=sol[funcName],
+                        CL=sol["cl"],
                         CLStar=CLStar,
                         err=fnm1,
                         clalpha=clalpha,
@@ -2221,8 +2221,8 @@ class ADFLOW(AeroSolver):
             converged = checkConvergence(fnm1)
 
             # rest of the results
-            CL = sol[funcName]
-            err = sol[funcName] - CLStar
+            CL = sol["cl"]
+            err = sol["cl"] - CLStar
             t2 = time.time()
             resultsDict = {
                 "converged": converged,
