@@ -1865,6 +1865,7 @@ class ADFLOW(AeroSolver):
         writeSolution=False,
         workUnitTime=None,
         updateCutoff=1e-16,
+        surfName=None,
     ):
         """
         This is a simple secant method search for solving for a
@@ -1939,6 +1940,8 @@ class ADFLOW(AeroSolver):
             value from the last iteration. This prevents clalpha from getting
             bad updates due to noisy cl outputs that result from small alpha
             changes.
+        surfName : str
+            Name of the surface to evaluate cl on. If None, just the "cl" function is used.
 
         Returns
         -------
@@ -1978,6 +1981,11 @@ class ADFLOW(AeroSolver):
 
         # time the CL solve
         t1 = time.time()
+
+        # get the function name
+        funcName = "cl"
+        if surfName is not None:
+            funcName += f"_{surfName}"
 
         # pointer to the iteration module for faster access
         iterationModule = self.adflow.iteration
@@ -2085,7 +2093,7 @@ class ADFLOW(AeroSolver):
         self.__call__(aeroProblem, writeSolution=False)
         convergenceHistory.append(self.getConvergenceHistory(workUnitTime=workUnitTime))
         sol = self.getSolution()
-        fnm2 = sol["cl"] - CLStar
+        fnm2 = sol[funcName] - CLStar
 
         if CLalphaGuess is None:
             # Use the delta option to define the next Aoa
@@ -2113,7 +2121,7 @@ class ADFLOW(AeroSolver):
                     L2Conv=L2Conv,
                     L2ConvRel=iterationModule.totalrfinal / iterationModule.totalrstart,
                     curAlpha=aeroProblem.alpha,
-                    CL=sol["cl"],
+                    CL=sol[funcName],
                     CLStar=CLStar,
                     err=fnm2,
                     clalpha=clalpha,
@@ -2126,15 +2134,15 @@ class ADFLOW(AeroSolver):
         converged = checkConvergence(fnm2)
 
         # rest of the results
-        CL = sol["cl"]
-        err = sol["cl"] - CLStar
+        CL = sol[funcName]
+        err = sol[funcName] - CLStar
         t2 = time.time()
         resultsDict = {
             "converged": converged,
             "iterations": 1,
             "l2convergence": L2Conv,
             "alpha": aeroProblem.alpha,
-            "cl": CL,
+            funcName: CL,
             "clstar": CLStar,
             "error": err,
             "clalpha": clalpha,
@@ -2165,7 +2173,7 @@ class ADFLOW(AeroSolver):
 
             self.curAP.adflowData.callCounter -= 1
             sol = self.getSolution()
-            fnm1 = sol["cl"] - CLStar
+            fnm1 = sol[funcName] - CLStar
 
             # Secant Update
             if _iIter == 1 and CLalphaGuess is None:
@@ -2200,7 +2208,7 @@ class ADFLOW(AeroSolver):
                         L2Conv=L2Conv,
                         L2ConvRel=iterationModule.totalrfinal / iterationModule.totalrstart,
                         curAlpha=aeroProblem.alpha,
-                        CL=sol["cl"],
+                        CL=sol[funcName],
                         CLStar=CLStar,
                         err=fnm1,
                         clalpha=clalpha,
@@ -2213,15 +2221,15 @@ class ADFLOW(AeroSolver):
             converged = checkConvergence(fnm1)
 
             # rest of the results
-            CL = sol["cl"]
-            err = sol["cl"] - CLStar
+            CL = sol[funcName]
+            err = sol[funcName] - CLStar
             t2 = time.time()
             resultsDict = {
                 "converged": converged,
                 "iterations": _iIter + 1,
                 "l2convergence": L2Conv,
                 "alpha": aeroProblem.alpha,
-                "cl": CL,
+                funcName: CL,
                 "clstar": CLStar,
                 "error": err,
                 "clalpha": clalpha,
